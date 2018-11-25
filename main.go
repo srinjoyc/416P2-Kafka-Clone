@@ -30,6 +30,7 @@ func handleConnection(c net.Conn) {
 		}
 
 		msg := strings.TrimSpace(string(netData))
+		fmt.Println(msg)
 		if msg == "STOP" {
 			break
 		}
