@@ -1,7 +1,7 @@
 # 416P2-Kafka-Clone
 A simplified version of the kafka protocol.
 
-### Instruction to use producer to send message to kafka routine:
+## Instruction to use producer to send message to kafka routine:
 run producer:
 ```shell
 go run provider.go p1.json 
@@ -11,7 +11,8 @@ run kafka:
 go run kafka.go k1.json 
 ```
 There are 2 ways to generate message and send to kafka main routine:
-* input a message as you want
+
+#### input a message as you want
 
 producer:
 ```
@@ -33,7 +34,7 @@ Listening provider at : 127.0.0.1:10001
 Provider Msg: &{ID:P1 Type:text Text:hello world}
 ```
 
-* input a message file name
+####  input a message file name
 producer:
 ```
 *******************
