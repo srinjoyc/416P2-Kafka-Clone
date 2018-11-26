@@ -22,8 +22,10 @@ producer:
 * file: upload the file to connected nodes
 *******************
 cmd: msg
-Input a message:hello world
-Response : &{ID:k1 Type:text Text:succeed}
+Input topic: demo
+Input partition: 1
+Input message: hello world
+Response : {kID:k1, status:succeed}
 cmd: 
 
 ```
@@ -31,7 +33,7 @@ cmd:
 kafka:
 ```
 Listening provider at : 127.0.0.1:10001
-Provider Msg: &{ID:P1 Type:text Text:hello world}
+Receive Provider Msg: {pID:P1, type:Text, partition:1, text:hello world}
 ```
 
 ####  input a message file name
@@ -43,22 +45,22 @@ producer:
 * file: upload the file to connected nodes
 *******************
 cmd: file
+Input topic: 1
+Input partition list such as 1,2,3: 1
 Input file name:msg.txt
-Response : &{ID:k1 Type:text Text:succeed}
-Response : &{ID:k1 Type:text Text:succeed}
-Response : &{ID:k1 Type:text Text:succeed}
-Response : &{ID:k1 Type:text Text:succeed}
-Response : &{ID:k1 Type:text Text:succeed}
-cmd: 
-
+Response : {kID:k1, status:succeed}
+Response : {kID:k1, status:succeed}
+Response : {kID:k1, status:succeed}
+Response : {kID:k1, status:succeed}
+Response : {kID:k1, status:succeed}
 ```
 
 kafka:
 ```
 Listening provider at : 127.0.0.1:10001
-Provider Msg: &{ID:P1 Type:text Text:1}
-Provider Msg: &{ID:P1 Type:text Text:2}
-Provider Msg: &{ID:P1 Type:text Text:3}
-Provider Msg: &{ID:P1 Type:text Text:4}
-Provider Msg: &{ID:P1 Type:text Text:5}
+Receive Provider Msg: {pID:P1, type:Text, partition:1, text:1}
+Receive Provider Msg: {pID:P1, type:Text, partition:1, text:2}
+Receive Provider Msg: {pID:P1, type:Text, partition:1, text:3}
+Receive Provider Msg: {pID:P1, type:Text, partition:1, text:4}
+Receive Provider Msg: {pID:P1, type:Text, partition:1, text:5}
 ```
