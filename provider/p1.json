@@ -1,0 +1,4 @@
+{
+    "RemoteKafkaIPPorts": ["127.0.0.1:10001"],
+    "ProviderID": "P1"
+}
