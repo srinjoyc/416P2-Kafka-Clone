@@ -21,9 +21,11 @@ var config configSetting
 
 // Message is used for communication among nodes
 type Message struct {
-	ID   string
-	Type string // "cmd" or "text"
-	Text string
+	ID        string
+	Type      string
+	Text      string
+	Topic     string
+	Partition string
 }
 
 /*
@@ -60,7 +62,7 @@ func readConfigJSON(configFile string) {
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, msg string) error {
+func provideMsg(remoteIPPort string, message Message) error {
 	conn, err := net.Dial("tcp", remoteIPPort)
 	if err != nil {
 		println("Fail to connect kafka " + remoteIPPort)
@@ -70,7 +72,7 @@ func provideMsg(remoteIPPort string, msg string) error {
 
 	// send message
 	enc := gob.NewEncoder(conn)
-	err = enc.Encode(Message{config.ProviderID, "text", msg})
+	err = enc.Encode(message)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
@@ -79,7 +81,7 @@ func provideMsg(remoteIPPort string, msg string) error {
 	dec := gob.NewDecoder(conn)
 	response := &Message{}
 	dec.Decode(response)
-	fmt.Printf("Response : %+v\n", response)
+	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
 	return nil
 }
@@ -90,7 +92,15 @@ func provideMsg(remoteIPPort string, msg string) error {
  * Desc:
  * 		send the message to connected kafka nodes
  */
-func provideMsgToKafka(message string) {
+func provideMsgToKafka(topic string, partition string, msg string) {
+	message := Message{config.ProviderID, "Text", msg, topic, partition}
+	for i := 0; i < len(config.RemoteKafkaIPPorts); i++ {
+		provideMsg(config.RemoteKafkaIPPorts[i], message)
+	}
+}
+
+func createTopicInKafka(topicName string) {
+	message := Message{config.ProviderID, "CreateTopic", "", topicName, ""}
 	for i := 0; i < len(config.RemoteKafkaIPPorts); i++ {
 		provideMsg(config.RemoteKafkaIPPorts[i], message)
 	}
@@ -117,16 +127,40 @@ func main() {
 		print("cmd: ")
 		cmd, _ := reader.ReadString('\n')
 		if cmd == "msg\n" { // input send a messge
-			print("Input a message:")
-			text, _ := reader.ReadString('\n')
-			provideMsgToKafka(text)
+			var message, partition, topic string
+
+			// read data from stdin
+			print("Input topic: ")
+			fmt.Scanln(&topic)
+			print("Input partition: ")
+			fmt.Scanln(&partition)
+			print("Input message: ")
+			message, _ = reader.ReadString('\n')
+			message = message[:len(message)-1]
+
+			// provide message
+			provideMsgToKafka(topic, partition, message)
 		} else if cmd == "file\n" { // input the filename of a set of messages, the messages are divided by '\n'
+			var topic, partition string
+
+			// read data from stdin
+			print("Input topic: ")
+			fmt.Scanln(&topic)
+			print("Input partition list such as 1,2,3: ")
+			fmt.Scanln(&partition)
 			print("Input file name:")
 			filename, _ := reader.ReadString('\n')
 			data := strings.Split(string(readFileByte(filename[:len(filename)-1])), "\n")
+
+			// provide messages
 			for i := 0; i < len(data); i++ {
-				provideMsgToKafka(data[i])
+				provideMsgToKafka(topic, partition, data[i])
 			}
+		} else if cmd == "createtopic\n" {
+			print("Input topic name:")
+			topic, _ := reader.ReadString('\n')
+			topic = topic[:len(topic)-1]
+			createTopicInKafka(topic)
 		}
 	}
 }

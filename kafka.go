@@ -24,9 +24,11 @@ type configSetting struct {
 
 // Message is used for communication among nodes
 type Message struct {
-	ID   string
-	Type string
-	Text string
+	ID        string
+	Type      string
+	Text      string
+	Topic     string
+	Partition string
 }
 
 var config configSetting
@@ -97,11 +99,23 @@ func dealProvider(conn net.Conn) {
 	dec := gob.NewDecoder(conn)
 	message := &Message{}
 	dec.Decode(message) // decode the infomation into initialized message
-	fmt.Printf("Provider Msg: %+v\n", message)
 
-	// write the response
+	// if-else branch to deal with different types of messages
+	if message.Type == "Text" {
+		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
+
+		// code about append text
+
+	} else if message.Type == "CreateTopic" {
+		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", message.ID, message.Type, message.Topic)
+
+		// code about topic
+
+	}
+
+	// write the success response
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(Message{config.NodeID, "text", "succeed"})
+	err := enc.Encode(Message{config.NodeID, "response", "succeed", "", ""})
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
