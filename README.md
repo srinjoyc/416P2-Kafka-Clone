@@ -6,3 +6,6 @@ producer:
 ```shell
 go run provider.go p1.json 
 ```
+There are 2 ways to generate message and send to kafka main routine:
+* input a message as you want
+* input a message file name
