@@ -37,11 +37,11 @@ type Message struct {
  */
 func readConfigJSON(configFile string) {
 	jsonFile, err := os.Open(configFile)
+	defer jsonFile.Close()
 	if err != nil {
 		fmt.Println(err) // if we os.Open returns an error then handle it
 	}
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
-	defer jsonFile.Close()
 }
 
 /* provideMsg
@@ -87,6 +87,7 @@ func provideMsgToKafka(topic string, partition string, msg string) {
 			break
 		}
 		// if one manager is down, connect another one
+		// tries to connect to all managers, stopping at the first successful connection
 	}
 }
 
@@ -97,6 +98,7 @@ func createTopicInKafka(topicName string) {
 			break
 		}
 		// if one manager is down, connect another one
+		// tries to connect to all managers, stopping at the first successful connection
 	}
 }
 

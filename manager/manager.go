@@ -46,11 +46,11 @@ type Message struct {
  */
 func readConfigJSON(configFile string) {
 	jsonFile, err := os.Open(configFile)
+	defer jsonFile.Close()
 	if err != nil {
 		fmt.Println(err) // if we os.Open returns an error then handle it
 	}
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
-	defer jsonFile.Close()
 }
 
 /* listenProvider
@@ -74,7 +74,7 @@ func listenProvider() {
 		conn, err := listener.Accept()
 		if err != nil {
 			fmt.Println(err)
-			return
+			continue
 		}
 		go dealProvider(conn)
 	}
@@ -89,7 +89,9 @@ func listenProvider() {
  */
 func dealProvider(conn net.Conn) {
 	// decode the serialized message from the connection
+	defer conn.Close()
 	dec := gob.NewDecoder(conn)
+
 	message := &Message{}
 	dec.Decode(message) // decode the infomation into initialized message
 
@@ -112,7 +114,6 @@ func dealProvider(conn net.Conn) {
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
-	conn.Close()
 }
 
 func listenBroker() {
@@ -129,13 +130,14 @@ func listenBroker() {
 		conn, err := listener.Accept()
 		if err != nil {
 			fmt.Println(err)
-			return
+			continue
 		}
 		go dealBroker(conn)
 	}
 }
 
 func dealBroker(conn net.Conn) {
+	defer conn.Close()
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
 	message := &Message{}
@@ -158,7 +160,6 @@ func dealBroker(conn net.Conn) {
 			brokersList.list = append(brokersList.list, message.Text)
 		}
 		brokersList.mutex.Unlock()
-
 	}
 
 	// write the success response
@@ -167,7 +168,6 @@ func dealBroker(conn net.Conn) {
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
-	conn.Close()
 }
 
 // Initialize starts the node as a Manager node in the network
