@@ -1,5 +1,7 @@
 package main
 
+// This is a sample client cli program
+
 import (
 	"bufio"
 	"encoding/gob"
@@ -10,7 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"../IOlib"
+	"../lib/IOlib"
+	"../lib/message"
 )
 
 type configSetting struct {
@@ -20,15 +23,6 @@ type configSetting struct {
 
 var config configSetting
 
-// Message is used for communication among nodes
-type Message struct {
-	ID        string
-	Type      string
-	Text      string
-	Topic     string
-	Partition string
-}
-
 /* readConfigJSON
  * Desc:
  *		read the configration from file into struct config
@@ -37,11 +31,11 @@ type Message struct {
  */
 func readConfigJSON(configFile string) {
 	jsonFile, err := os.Open(configFile)
+	defer jsonFile.Close()
 	if err != nil {
 		fmt.Println(err) // if we os.Open returns an error then handle it
 	}
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
-	defer jsonFile.Close()
 }
 
 /* provideMsg
@@ -50,7 +44,7 @@ func readConfigJSON(configFile string) {
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, message Message) error {
+func provideMsg(remoteIPPort string, outgoing message.Message) error {
 	conn, err := net.Dial("tcp", remoteIPPort)
 	if err != nil {
 		println("Fail to connect kafka manager" + remoteIPPort)
@@ -60,14 +54,14 @@ func provideMsg(remoteIPPort string, message Message) error {
 
 	// send message
 	enc := gob.NewEncoder(conn)
-	err = enc.Encode(message)
+	err = enc.Encode(outgoing)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
 
 	// response
 	dec := gob.NewDecoder(conn)
-	response := &Message{}
+	response := &message.Message{}
 	dec.Decode(response)
 	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
@@ -81,22 +75,24 @@ func provideMsg(remoteIPPort string, message Message) error {
  * 		send the message to connected kafka nodes
  */
 func provideMsgToKafka(topic string, partition string, msg string) {
-	message := Message{config.ProviderID, "Text", msg, topic, partition}
+	message := message.Message{config.ProviderID, "Text", msg, topic, partition}
 	for i := 0; i < len(config.KafkaManagerIPPorts); i++ {
 		if nil == provideMsg(config.KafkaManagerIPPorts[i], message) {
 			break
 		}
 		// if one manager is down, connect another one
+		// tries to connect to all managers, stopping at the first successful connection
 	}
 }
 
 func createTopicInKafka(topicName string) {
-	message := Message{config.ProviderID, "CreateTopic", "", topicName, ""}
+	message := message.Message{config.ProviderID, "CreateTopic", "", topicName, ""}
 	for i := 0; i < len(config.KafkaManagerIPPorts); i++ {
 		if nil == provideMsg(config.KafkaManagerIPPorts[i], message) {
 			break
 		}
 		// if one manager is down, connect another one
+		// tries to connect to all managers, stopping at the first successful connection
 	}
 }
 
