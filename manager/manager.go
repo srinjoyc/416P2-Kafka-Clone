@@ -58,8 +58,8 @@ type freeNodesSet struct {
 // Once these nodes are returned to caller, there are marked as busy to avoid concurrency issues.
 // If the caller gets free nodes using this function, and then decides not to use them, it must
 // manually de-allocate each node by calling setNodeAsFree.
-// TODO: In the future, this may be implemented as some other complicated algorithm
-// for allocating free nodes. For now just getting the first free nodes we see is ok.
+
+// TODO: Make this DHT instead of first seen first provisioned.
 func (s *freeNodesSet) getFreeNodes(num int) ([]string, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -204,17 +204,17 @@ func listenManagers() {
 func dealManager(conn net.Conn) {
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
-	message := &Message{}
-	dec.Decode(message) // decode the infomation into initialized message
+	msg := &message.Message{}
+	dec.Decode(msg) // decode the infomation into initialized message
 
 	// if-else branch to deal with different types of messages
-	if message.Type == "Text" {
-		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
+	if msg.Type == "Text" {
+		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", msg.ID, msg.Type, msg.Partition, msg.Text)
 
 		// code about append text
 
-	} else if message.Type == "CreateTopic" {
-		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, topic:%s}\n", message.ID, message.Type, message.Topic)
+	} else if msg.Type == "CreateTopic" {
+		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
 
 		// code about topic
 
@@ -222,7 +222,7 @@ func dealManager(conn net.Conn) {
 
 	// write the success response
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}

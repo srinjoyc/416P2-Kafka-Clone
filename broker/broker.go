@@ -26,19 +26,19 @@ type Peer struct {
 }
 
 type Topic struct {
-	topicID string
-	partitionIdx uint8
-	partition partition
+	topicID        string
+	partitionIdx   uint8
+	partition      partition
 	consumerOffset map[consumerId]uint
 	Status
 	FollowerList map[net.Addr]bool
 }
 
 type Message struct {
-	Topic   string
-	ID      string
+	Topic        string
+	ID           string
 	PartitionIdx uint8
-	Payload Packet
+	Payload      Packet
 }
 
 const (
@@ -91,18 +91,17 @@ func spawnListener(addr string) {
 }
 
 func (b *BrokerServer) StartLeader(m *Message, ack *bool) error {
-	
-	topic := Topic{
-		topicID: m.ID,
-		partitionIdx: m.PartitionIdx,
-		partition: partition{},
-		consumerOffset: make(map[consumerId]uint),
-		Status: Leader,
-		FollowerList: make(map[net.Addr]bool),
-	}
-	
-	broker.topicList = append(broker.topicList, topic) 
 
+	topic := Topic{
+		topicID:        m.ID,
+		partitionIdx:   m.PartitionIdx,
+		partition:      partition{},
+		consumerOffset: make(map[consumerId]uint),
+		Status:         Leader,
+		FollowerList:   make(map[net.Addr]bool),
+	}
+
+	broker.topicList = append(broker.topicList, topic)
 
 	fmt.Println("Starting Leader")
 	*ack = true
