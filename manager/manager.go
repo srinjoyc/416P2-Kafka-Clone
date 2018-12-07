@@ -55,6 +55,9 @@ type freeNodesSet struct {
 // getFreeNodes returns a slice of free nodes with length num
 // If the amount of available free nodes is < num,
 // return an InsufficientFreeNodes error.
+// Once these nodes are returned to caller, there are marked as busy to avoid concurrency issues.
+// If the caller gets free nodes using this function, and then decides not to use them, it must
+// manually de-allocate each node by calling setNodeAsFree.
 // TODO: In the future, this may be implemented as some other complicated algorithm
 // for allocating free nodes. For now just getting the first free nodes we see is ok.
 func (s *freeNodesSet) getFreeNodes(num int) ([]string, error) {
@@ -62,17 +65,24 @@ func (s *freeNodesSet) getFreeNodes(num int) ([]string, error) {
 	defer s.mutex.Unlock()
 
 	var nodes []string
+	var full bool
 	for ip, free := range s.set {
 		if free {
 			nodes = append(nodes, ip)
+			s.set[ip] = false
+		}
+
+		if len(nodes) == num {
+			full = true
+			break
 		}
 	}
 
-	if len(nodes) >= num {
-		return nodes[:num], nil
+	if full {
+		return nodes, nil
+	} else {
+		return nil, ErrInsufficientFreeNodes
 	}
-
-	return nil, ErrInsufficientFreeNodes
 }
 
 func (s *freeNodesSet) isFree(ip string) bool {
