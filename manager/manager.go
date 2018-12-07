@@ -10,7 +10,8 @@ import (
 	"os"
 	"sync"
 
-	"../IOlib"
+	"../lib/IOlib"
+	"../lib/message"
 )
 
 type configSetting struct {
@@ -28,13 +29,12 @@ var brokersList struct {
 	mutex sync.Mutex
 }
 
-// Message is used for communication among nodes
-type Message struct {
-	ID        string
-	Type      string
-	Text      string
-	Topic     string
-	Partition string
+// manager keeps track of all free nodes (i.e. nodes that are ready to
+// be 'provisioned'.  If this manager goes down, it will need to ensure that the other managers
+// have the correct copy of this list.
+var freeNodesList struct {
+	list  []string
+	mutex sync.Mutex
 }
 
 /* readConfigJSON
@@ -92,17 +92,17 @@ func dealProvider(conn net.Conn) {
 	defer conn.Close()
 	dec := gob.NewDecoder(conn)
 
-	message := &Message{}
-	dec.Decode(message) // decode the infomation into initialized message
+	incoming := &message.Message{}
+	dec.Decode(incoming) // decode the infomation into initialized message
 
 	// if-else branch to deal with different types of messages
-	if message.Type == "Text" {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
+	if incoming.Type == "Text" {
+		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", incoming.ID, incoming.Type, incoming.Partition, incoming.Text)
 
 		// code about append text
 
-	} else if message.Type == "CreateTopic" {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", message.ID, message.Type, message.Topic)
+	} else if incoming.Type == "CreateTopic" {
+		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", incoming.ID, incoming.Type, incoming.Topic)
 
 		// code about topic
 
@@ -110,7 +110,7 @@ func dealProvider(conn net.Conn) {
 
 	// write the success response
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
@@ -140,31 +140,31 @@ func dealBroker(conn net.Conn) {
 	defer conn.Close()
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
-	message := &Message{}
-	dec.Decode(message) // decode the infomation into initialized message
+	incoming := &message.Message{}
+	dec.Decode(incoming) // decode the infomation into initialized message
 
 	// if-else branch to deal with different types of messages
-	if message.Type == "New Broker" {
-		fmt.Printf("Receive Broker Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
+	if incoming.Type == "New Broker" {
+		fmt.Printf("Receive Broker Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", incoming.ID, incoming.Type, incoming.Partition, incoming.Text)
 
 		// code about append the broker
 		brokersList.mutex.Lock()
 		flag := false
 		for _, ip := range brokersList.list {
-			if ip == message.Text {
+			if ip == incoming.Text {
 				flag = true
 				break
 			}
 		}
 		if flag == false {
-			brokersList.list = append(brokersList.list, message.Text)
+			brokersList.list = append(brokersList.list, incoming.Text)
 		}
 		brokersList.mutex.Unlock()
 	}
 
 	// write the success response
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
