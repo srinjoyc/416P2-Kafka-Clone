@@ -1,0 +1,1 @@
+go run broker.go b1.json

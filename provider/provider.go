@@ -163,5 +163,14 @@ func main() {
 			return
 		}
 		createTopicInKafka(os.Args[3])
+	} else if os.Args[2] == "appendmessage" {
+		if len(os.Args) != 6 {
+			println("Incorrect Format: go run provider.go [config] appendmessage [topic] [partition] [message]")
+			return
+		}
+		topic := os.Args[3]
+		partition := os.Args[4]
+		message := os.Args[5]
+		provideMsgToKafka(topic, partition, message)
 	}
 }

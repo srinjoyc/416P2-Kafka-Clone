@@ -186,7 +186,6 @@ func Initialize() bool {
 func main() {
 	Initialize()
 
-	println(455)
 	// terminal controller like shell
 	reader := bufio.NewReader(os.Stdin)
 	for {
