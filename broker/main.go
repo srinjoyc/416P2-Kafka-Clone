@@ -9,6 +9,8 @@ import (
 	"log"
 	"net"
 	"os"
+
+	"../lib/message"
 )
 
 type configSetting struct {
@@ -84,7 +86,7 @@ func provideMsg(remoteIPPort string, message Message) error {
 }
 
 func informManager() {
-	message := Message{config.BrokerNodeID, "New Broker", s(config.ManagerIPPort)}
+	m := message.Message{config.BrokerNodeID, "New Broker", s(config.ManagerIPPort)}
 	for i := 0; i < len(config.ManagerIPs); i++ {
 		provideMsg(config.ManagerIPs[i], message)
 	}
@@ -98,7 +100,7 @@ func Initialize() error {
 	}
 
 	fmt.Println(config.BrokerIPPort)
-	// informManager() // when a new broker starts, it will inform the manager nodes
+	informManager() // when a new broker starts, it will inform the manager nodes
 
 	return nil
 }
@@ -109,7 +111,7 @@ func main() {
 		return
 	}
 
-	err :=  Initialize()
+	err := Initialize()
 	checkError(err)
 
 	err = InitBroker(config.BrokerIPPort)
@@ -134,4 +136,3 @@ func checkError(err error) {
 		os.Exit(1)
 	}
 }
-

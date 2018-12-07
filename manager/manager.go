@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -13,6 +14,12 @@ import (
 	"../lib/IOlib"
 	"../lib/message"
 )
+
+// Error types
+
+// ErrInsufficientFreeNodes denotes that someone requested more free nodes
+// than are currently available
+var ErrInsufficientFreeNodes = errors.New("insufficient free nodes")
 
 type configSetting struct {
 	ManagerNodeID     string
@@ -29,12 +36,92 @@ var brokersList struct {
 	mutex sync.Mutex
 }
 
-// manager keeps track of all free nodes (i.e. nodes that are ready to
-// be 'provisioned'.  If this manager goes down, it will need to ensure that the other managers
-// have the correct copy of this list.
-var freeNodesList struct {
-	list  []string
+// manager keeps track of all free nodes (i.e. nodes that are ready to be 'provisioned'.
+// If this manager goes down, it will need to ensure that the other managers
+// have the correct copy of this set.
+// Initialize this set to a bunch of free nodes on manager startup, probably via a json config.
+var freeNodes freeNodesSet
+
+// freeNodesSet contains a set of nodes for the entire topology.
+// if set[nodeIP] == true,  node is free
+// if set[nodeIP] == false, node is busy
+//
+// Operations on freeNodesSet are atomic.
+type freeNodesSet struct {
+	set   map[string]bool
 	mutex sync.Mutex
+}
+
+// getFreeNodes returns a slice of free nodes with length num
+// If the amount of available free nodes is < num,
+// return an InsufficientFreeNodes error.
+// Once these nodes are returned to caller, there are marked as busy to avoid concurrency issues.
+// If the caller gets free nodes using this function, and then decides not to use them, it must
+// manually de-allocate each node by calling setNodeAsFree.
+
+// TODO: Make this DHT instead of first seen first provisioned.
+func (s *freeNodesSet) getFreeNodes(num int) ([]string, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	var nodes []string
+	var full bool
+	for ip, free := range s.set {
+		if free {
+			nodes = append(nodes, ip)
+			s.set[ip] = false
+		}
+
+		if len(nodes) == num {
+			full = true
+			break
+		}
+	}
+
+	if full {
+		return nodes, nil
+	} else {
+		return nil, ErrInsufficientFreeNodes
+	}
+}
+
+func (s *freeNodesSet) isFree(ip string) bool {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if free, ok := s.set[ip]; ok {
+		return free
+	}
+	// If we asked for an ip thats not even in the registered set of nodes,
+	// just return false as if node is busy.
+	return false
+}
+
+func (s *freeNodesSet) setNodeAsFree(ip string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if _, ok := s.set[ip]; ok {
+		s.set[ip] = true
+	}
+	// No-op if ip is not in registered set.
+}
+
+func (s *freeNodesSet) setNodeAsBusy(ip string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if _, ok := s.set[ip]; ok {
+		s.set[ip] = false
+	}
+	// No-op if ip is not in registered set.
+}
+
+func (s *freeNodesSet) addFreeNode(ip string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if _, ok := s.set[ip]; !ok {
+		// Only add this free node if its not already in the set of free nodes.
+		s.set[ip] = true
+	}
+	// If ip is already in the set, no-op.
 }
 
 /* readConfigJSON
@@ -117,17 +204,17 @@ func listenManagers() {
 func dealManager(conn net.Conn) {
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
-	message := &Message{}
-	dec.Decode(message) // decode the infomation into initialized message
+	msg := &message.Message{}
+	dec.Decode(msg) // decode the infomation into initialized message
 
 	// if-else branch to deal with different types of messages
-	if message.Type == "Text" {
-		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
+	if msg.Type == "Text" {
+		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", msg.ID, msg.Type, msg.Partition, msg.Text)
 
 		// code about append text
 
-	} else if message.Type == "CreateTopic" {
-		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, topic:%s}\n", message.ID, message.Type, message.Topic)
+	} else if msg.Type == "CreateTopic" {
+		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
 
 		// code about topic
 
@@ -135,7 +222,7 @@ func dealManager(conn net.Conn) {
 
 	// write the success response
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
