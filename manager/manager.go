@@ -1,4 +1,4 @@
-package manager
+package main
 
 import (
 	"fmt"
@@ -8,4 +8,8 @@ import (
 func Initialize() bool {
 	fmt.Println("Inited Node as a Manager Node.")
 	return true
+}
+
+func main(){
+	fmt.Println(123)
 }

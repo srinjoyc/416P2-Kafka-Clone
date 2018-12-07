@@ -5,13 +5,11 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
 
-	"./follower"
-	"./leader"
+	"../IOlib"
 )
 
 type configSetting struct {
@@ -33,34 +31,21 @@ type Message struct {
 
 var config configSetting
 
-/* readFileByte
- * Desc:
- *		read and then return the byte of Content from file in corresponding path
- * @para: filePath: relative url of file
- * @Return: []byte
- */
-func readFileByte(filePath string) []byte {
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return data
-}
-
 /* readConfigJSON
  * Desc:
  *		read the configration from file into struct config
  * @para configFile: relative url of file of configuration
  * @retrun: None
  */
-func readConfigJSON(configFile string) {
+ func readConfigJSON(configFile string) {
 	jsonFile, err := os.Open(configFile)
 	if err != nil {
 		fmt.Println(err) // if we os.Open returns an error then handle it
 	}
-	json.Unmarshal([]byte(readFileByte(configFile)), &config)
+	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
 	defer jsonFile.Close()
 }
+
 
 /* listenProvider
  * Desc:
@@ -122,22 +107,7 @@ func dealProvider(conn net.Conn) {
 	conn.Close()
 }
 
-func initialize() {
-	leader.Initialize()
-	follower.Initialize()
-}
 
-/* commender
- * Desc:
- * 		terminal controller like shell
- */
-func commender() {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		text, _ := reader.ReadString('\n')
-		println(text)
-	}
-}
 
 func main() {
 	if len(os.Args) != 2 {
@@ -150,5 +120,10 @@ func main() {
 	// initialize()
 	go listenProvider(config.ProviderIPPort)
 
-	commender()
+	reader := bufio.NewReader(os.Stdin)
+	// terminal controller like shell
+	for {
+		text, _ := reader.ReadString('\n')
+		println(text)
+	}
 }
