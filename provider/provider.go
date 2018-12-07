@@ -167,6 +167,10 @@ func main() {
 		topic := os.Args[3]
 		partition := os.Args[4]
 		message := os.Args[5]
-		provideMsgToKafka(topic, partition, message)
+		// send msg
+		msg := Message{config.ProviderID, "Text", message, topic, partition}
+		provideMsg(config.KafkaManagerIPPorts[0], msg)
+
+		//provideMsgToKafka(topic, partition, message)
 	}
 }

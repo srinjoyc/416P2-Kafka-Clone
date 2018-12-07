@@ -9,13 +9,14 @@ import (
 	"net"
 	"os"
 
-	"../IOlib"
+	"../lib/IOlib"
 )
 
 type configSetting struct {
 	BrokerNodeID   string
-	ManagerIPPort  string
+	BrokerIP       string
 	ConsumerIPPort string
+	FollowerIPs    []string
 	ManagerIPs     []string
 }
 
@@ -77,7 +78,7 @@ func provideMsg(remoteIPPort string, message Message) error {
 }
 
 func informManager() {
-	message := Message{config.BrokerNodeID, "New Broker", config.ManagerIPPort, "", ""}
+	message := Message{config.BrokerNodeID, "New Broker", config.BrokerIP, "", ""}
 	for i := 0; i < len(config.ManagerIPs); i++ {
 		provideMsg(config.ManagerIPs[i], message)
 	}

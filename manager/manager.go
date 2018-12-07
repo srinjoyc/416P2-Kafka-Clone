@@ -22,11 +22,11 @@ import (
 var ErrInsufficientFreeNodes = errors.New("insufficient free nodes")
 
 type configSetting struct {
-	ManagerNodeID         string
-	ProviderIPPort        string
-	BrokerIPPort          string
-	NeighborManagerIPPort string
-	PeerManagerNodeIP     []string
+	ManagerNodeID     string
+	ProviderIPPort    string
+	BrokerIPPort      string
+	ManagerIP         string
+	PeerManagerNodeIP []string
 }
 
 var config configSetting
@@ -167,6 +167,68 @@ func listenProvider() {
 	}
 }
 
+/* listenManagers()
+ * Desc:
+ * 		this is a goroutine dealing with other manger nodes
+ *
+ * @para IPPort [string]:
+ *		The list of neighbouring managers
+ */
+func listenManagers() {
+	listener, err := net.Listen("tcp4", config.ManagerIP)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer listener.Close()
+
+	fmt.Println("Listening to other managers at :" + config.ManagerIP)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		go dealManager(conn)
+	}
+}
+
+/* dealManager
+ * @para conn:
+ *		the ip and port opened for messages from provider routine
+ *
+ * Desc: Handles all messages from other managers
+ *
+ */
+func dealManager(conn net.Conn) {
+	// decode the serialized message from the connection
+	dec := gob.NewDecoder(conn)
+	message := &Message{}
+	dec.Decode(message) // decode the infomation into initialized message
+
+	// if-else branch to deal with different types of messages
+	if message.Type == "Text" {
+		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
+
+		// code about append text
+
+	} else if message.Type == "CreateTopic" {
+		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, topic:%s}\n", message.ID, message.Type, message.Topic)
+
+		// code about topic
+
+	}
+
+	// write the success response
+	enc := gob.NewEncoder(conn)
+	err := enc.Encode(Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	if err != nil {
+		log.Fatal("encode error:", err)
+	}
+	conn.Close()
+}
+
 /* dealProvider
  * @para conn:
  *		the ip and port opened for messages from provider routine
@@ -266,6 +328,7 @@ func Initialize() bool {
 
 	go listenProvider()
 	go listenBroker()
+	go listenManagers()
 
 	return true
 }
