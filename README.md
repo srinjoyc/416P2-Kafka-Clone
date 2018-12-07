@@ -2,7 +2,7 @@
 A simplified version of the kafka.
 
 ## Topology
-![img](https://github.com/srinjoyc/416P2-Kafka-Clone/topology.png)
+![img](https://github.com/srinjoyc/416P2-Kafka-Clone/topology.png?raw=true)
 
 ## Instruction to use producer to send message to kafka routine:
 run producer:
