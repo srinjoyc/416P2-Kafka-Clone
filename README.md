@@ -1,5 +1,8 @@
 # 416P2-Kafka-Clone
-A simplified version of the kafka protocol.
+A simplified version of the kafka.
+
+## Topology
+![img](./topology.png)
 
 ## Instruction to use producer to send message to kafka routine:
 run producer:
