@@ -1,45 +1,27 @@
 package main
 
+// This is a sample client cli program
+
 import (
 	"bufio"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"strings"
+
+	"../lib/IOlib"
+	"../lib/message"
 )
 
 type configSetting struct {
-	ProviderID         string
-	RemoteKafkaIPPorts []string
+	ProviderID          string
+	KafkaManagerIPPorts []string
 }
 
 var config configSetting
-
-// Message is used for communication among nodes
-type Message struct {
-	ID        string
-	Type      string
-	Text      string
-	Topic     string
-	Partition string
-}
-
-/*
-@ para filePath: string
-@ Return: []byte
-Desc: read and then return the byte of Content from file in corresponding path
-*/
-func readFileByte(filePath string) []byte {
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return data
-}
 
 /* readConfigJSON
  * Desc:
@@ -49,11 +31,11 @@ func readFileByte(filePath string) []byte {
  */
 func readConfigJSON(configFile string) {
 	jsonFile, err := os.Open(configFile)
+	defer jsonFile.Close()
 	if err != nil {
 		fmt.Println(err) // if we os.Open returns an error then handle it
 	}
-	json.Unmarshal([]byte(readFileByte(configFile)), &config)
-	defer jsonFile.Close()
+	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
 }
 
 /* provideMsg
@@ -62,24 +44,24 @@ func readConfigJSON(configFile string) {
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, message Message) error {
+func provideMsg(remoteIPPort string, outgoing message.Message) error {
 	conn, err := net.Dial("tcp", remoteIPPort)
 	if err != nil {
-		println("Fail to connect kafka " + remoteIPPort)
+		println("Fail to connect kafka manager" + remoteIPPort)
 		return err
 	}
 	defer conn.Close()
 
 	// send message
 	enc := gob.NewEncoder(conn)
-	err = enc.Encode(message)
+	err = enc.Encode(outgoing)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
 
 	// response
 	dec := gob.NewDecoder(conn)
-	response := &Message{}
+	response := &message.Message{}
 	dec.Decode(response)
 	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
@@ -93,31 +75,28 @@ func provideMsg(remoteIPPort string, message Message) error {
  * 		send the message to connected kafka nodes
  */
 func provideMsgToKafka(topic string, partition string, msg string) {
-	message := Message{config.ProviderID, "Text", msg, topic, partition}
-	for i := 0; i < len(config.RemoteKafkaIPPorts); i++ {
-		provideMsg(config.RemoteKafkaIPPorts[i], message)
+	message := message.Message{config.ProviderID, "Text", msg, topic, partition}
+	for i := 0; i < len(config.KafkaManagerIPPorts); i++ {
+		if nil == provideMsg(config.KafkaManagerIPPorts[i], message) {
+			break
+		}
+		// if one manager is down, connect another one
+		// tries to connect to all managers, stopping at the first successful connection
 	}
 }
 
 func createTopicInKafka(topicName string) {
-	message := Message{config.ProviderID, "CreateTopic", "", topicName, ""}
-	for i := 0; i < len(config.RemoteKafkaIPPorts); i++ {
-		provideMsg(config.RemoteKafkaIPPorts[i], message)
+	message := message.Message{config.ProviderID, "CreateTopic", "", topicName, ""}
+	for i := 0; i < len(config.KafkaManagerIPPorts); i++ {
+		if nil == provideMsg(config.KafkaManagerIPPorts[i], message) {
+			break
+		}
+		// if one manager is down, connect another one
+		// tries to connect to all managers, stopping at the first successful connection
 	}
 }
 
-func initialize() {
-	readConfigJSON(os.Args[1])
-}
-
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("Please provide config filename. e.g. p1.json, p2.json")
-		return
-	}
-
-	initialize()
-
+func shell() {
 	// terminal controller like shell
 	println("*******************")
 	println("* Instuction: there are several kinds of operations\n* msg: upload the message into connected kafka nodes\n* file: upload the file to connected nodes")
@@ -150,7 +129,7 @@ func main() {
 			fmt.Scanln(&partition)
 			print("Input file name:")
 			filename, _ := reader.ReadString('\n')
-			data := strings.Split(string(readFileByte(filename[:len(filename)-1])), "\n")
+			data := strings.Split(string(IOlib.ReadFileByte(filename[:len(filename)-1])), "\n")
 
 			// provide messages
 			for i := 0; i < len(data); i++ {
@@ -162,5 +141,36 @@ func main() {
 			topic = topic[:len(topic)-1]
 			createTopicInKafka(topic)
 		}
+	}
+}
+
+func initialize() {
+	readConfigJSON(os.Args[1])
+}
+
+func main() {
+	initialize()
+
+	if os.Args[2] == "shell" {
+		shell()
+	} else if os.Args[2] == "createtopic" {
+		if len(os.Args) != 4 {
+			println("Incorrect Format: go run provider.go [config] createtopic [topic]")
+			return
+		}
+		createTopicInKafka(os.Args[3])
+	} else if os.Args[2] == "appendmessage" {
+		if len(os.Args) != 6 {
+			println("Incorrect Format: go run provider.go [config] appendmessage [topic] [partition] [message]")
+			return
+		}
+		topic := os.Args[3]
+		partition := os.Args[4]
+		message := os.Args[5]
+		// send msg
+		msg := Message{config.ProviderID, "Text", message, topic, partition}
+		provideMsg(config.KafkaManagerIPPorts[0], msg)
+
+		//provideMsgToKafka(topic, partition, message)
 	}
 }

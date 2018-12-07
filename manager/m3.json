@@ -1,0 +1,8 @@
+{
+    "ManagerNodeID": "m1",
+    "ProviderIPPort": "127.0.0.1:8080",
+    "BrokerIPPort": "127.0.0.1:3001",
+    "ClientIPPort": "127.0.0.1:8000",
+    "ManagerIP": "127.0.0.1:9082",
+    "PeerManagerNodeIP": ["127.0.0.1:9080", "127.0.0.1:9081"]
+}

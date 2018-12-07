@@ -1,7 +1,0 @@
-{
-    "NodeID": "k2",
-    "ProviderIPPort": "127.0.0.1:10002",
-    "ConsumerIPPort": "127.0.0.1:20002",
-    "InnerRPCIPPort": "127.0.0.1:30002",
-    "PeerKafkaNodeAddrs": ["127.0.0.1:30001"]
-}

@@ -1,4 +1,4 @@
-package broker
+package main
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"os"
 )
 
-type Packet interface{
-	Unmarshall() []byte
+type Packet interface {
+	Marshall() []byte
 }
 
 type Status int
@@ -26,20 +26,23 @@ type Peer struct {
 }
 
 type Topic struct {
-	id string
-	partition
+	topicID string
+	partitionIdx uint8
+	partition partition
 	consumerOffset map[consumerId]uint
 	Status
-	FollowerList []net.Addr
+	FollowerList map[net.Addr]bool
 }
 
 type Message struct {
-	Topic string
+	Topic   string
+	ID      string
+	PartitionIdx uint8
 	Payload Packet
 }
 
 const (
-	Manager Status = iota
+	Leader Status = iota
 	Follower
 )
 
@@ -47,17 +50,16 @@ type broker struct {
 	topicList map[string]*Topic
 }
 
-var Broker *broker
+var broker *broker
 
 // Initialize starts the node as a Broker node in the network
-func Initialize(addr string) error {
+func InitBroker(addr string) error {
 
 	Broker = &broker{
 		topicList: make(map[string]*Topic),
 	}
 	spawnListener(addr)
-	fmt.Println("Inited Node as a Leader Node.")
-
+	fmt.Println("Init Borker")
 	return nil
 }
 
@@ -75,18 +77,36 @@ func spawnListener(addr string) {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
 
-	fmt.Printf("Serving RPC Server at: %v\n", tcpAddr.String())
+	fmt.Printf("Serving Server at: %v\n", tcpAddr.String())
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
-		go rpc.ServeConn(conn)
+		// message, _ := bufio.NewReader(conn).ReadString('\n')
+		// fmt.Println(string(message))
+		rpc.ServeConn(conn)
 	}
 }
 
-func (b *BrokerServer) StartLeader(m *Message, res *bool){
+func (b *BrokerServer) StartLeader(m *Message, ack *bool) error {
+	
+	topic := Topic{
+		topicID: m.ID,
+		partitionIdx: m.PartitionIdx,
+		partition: partition{},
+		consumerOffset: make(map[consumerId]uint),
+		Status: Leader,
+		FollowerList: make(map[net.Addr]bool),
+	}
+	
+	broker.topicList = append(broker.topicList, topic) 
+
+
+	fmt.Println("Starting Leader")
+	*ack = true
+	return nil
 }
 
 func (b *BrokerServer) InitNewTopic(m *Message, res *bool) error {
@@ -102,7 +122,7 @@ func (b *BrokerServer) InitNewTopic(m *Message, res *bool) error {
 func (b *BrokerServer) AppendToPartition(m *Message, res *bool) error {
 	topicId := m.Topic
 	var rec record
-	copy(rec[:], m.Payload.Unmarshall())
+	copy(rec[:], m.Payload.Marshall())
 	Broker.topicList[topicId].partition = append(Broker.topicList[topicId].partition, &rec)
 	*res = true
 	return nil
@@ -111,23 +131,23 @@ func (b *BrokerServer) AppendToPartition(m *Message, res *bool) error {
 func (b *BrokerServer) AddClient(m *Message, res *bool) error {
 	topicId := m.Topic
 	var rec record
-	copy(rec[:], m.Payload.Unmarshall())
+	copy(rec[:], m.Payload.Marshall())
 	Broker.topicList[topicId].partition = append(Broker.topicList[topicId].partition, &rec)
 	*res = true
 	return nil
 }
 
-func (b *BrokerServer) DispatchData(m *Message, res *bool) error{
+func (b *BrokerServer) DispatchData(m *Message, res *bool) error {
 	topicID := m.Topic
-	clientId := m.Payload.Unmarshall()
+	clientId := m.Payload.Marshall()
 
 	Broker.topicList[topicID].consumerOffset[consumerId(clientId)] = 0
 	return nil
 }
 
-func (b *BrokerServer) AddFollowerToTopic(m *Message, res *bool) error{
+func (b *BrokerServer) AddFollowerToTopic(m *Message, res *bool) error {
 	topicID := m.Topic
-	followerAddr := m.Payload.Unmarshall()
+	followerAddr := m.Payload.Marshall()
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", string(followerAddr))
 	if err != nil {
@@ -138,7 +158,6 @@ func (b *BrokerServer) AddFollowerToTopic(m *Message, res *bool) error{
 	return nil
 }
 
-func broadcastToFollowers(stub interface{}) error{
+func broadcastToFollowers(stub interface{}) error {
 	return nil
 }
-
