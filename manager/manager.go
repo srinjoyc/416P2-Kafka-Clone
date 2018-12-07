@@ -76,7 +76,7 @@ func listenProvider() {
 			fmt.Println(err)
 			continue
 		}
-		go dealProvider(conn)
+		go handleProviderMessage(conn)
 	}
 }
 
@@ -87,7 +87,7 @@ func listenProvider() {
  * Desc:
  *
  */
-func dealProvider(conn net.Conn) {
+func handleProviderMessage(conn net.Conn) {
 	// decode the serialized message from the connection
 	defer conn.Close()
 	dec := gob.NewDecoder(conn)
@@ -132,11 +132,11 @@ func listenBroker() {
 			fmt.Println(err)
 			continue
 		}
-		go dealBroker(conn)
+		go handleBrokerMessage(conn)
 	}
 }
 
-func dealBroker(conn net.Conn) {
+func handleBrokerMessage(conn net.Conn) {
 	defer conn.Close()
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
