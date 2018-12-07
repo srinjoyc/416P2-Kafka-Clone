@@ -1,5 +1,7 @@
 package main
 
+// This is a sample client cli program
+
 import (
 	"bufio"
 	"encoding/gob"
