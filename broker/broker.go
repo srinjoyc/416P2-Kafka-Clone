@@ -1,111 +1,163 @@
 package main
 
 import (
-	"bufio"
-	"encoding/gob"
-	"encoding/json"
 	"fmt"
-	"log"
 	"net"
+	"net/rpc"
 	"os"
-
-	"../lib/IOlib"
 )
 
-type configSetting struct {
-	BrokerNodeID   string
-	BrokerIP       string
-	ConsumerIPPort string
-	FollowerIPs    []string
-	ManagerIPs     []string
+type Packet interface {
+	Marshall() []byte
 }
 
-// Message is used for communication among nodes
+type Status int
+
+type BrokerServer int
+
+type consumerId string
+
+type record [512]byte
+
+type partition []*record
+
+type Peer struct {
+	addr net.Addr
+}
+
+type Topic struct {
+	topicID string
+	partitionIdx uint8
+	partition partition
+	consumerOffset map[consumerId]uint
+	Status
+	FollowerList map[net.Addr]bool
+}
+
 type Message struct {
-	ID        string
-	Type      string
-	Text      string
-	Topic     string
-	Partition string
+	Topic   string
+	ID      string
+	PartitionIdx uint8
+	Payload Packet
 }
 
-var config configSetting
+const (
+	Leader Status = iota
+	Follower
+)
 
-/* readConfigJSON
- * Desc:
- *		read the configration from file into struct config
- *
- * @para configFile: relative url of file of configuration
- * @retrun: None
- */
-func readConfigJSON(configFile string) {
-	jsonFile, err := os.Open(configFile)
-	if err != nil {
-		fmt.Println(err) // if we os.Open returns an error then handle it
-	}
-	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
-	defer jsonFile.Close()
+type broker struct {
+	topicList map[string]*Topic
 }
 
-/* provideMsg
- * para message string
- *
- * Desc:
- * 		send the message to kafka node by remoteIPPort
- */
-func provideMsg(remoteIPPort string, message Message) error {
-	conn, err := net.Dial("tcp", remoteIPPort)
-	if err != nil {
-		println("Fail to connect kafka manager" + remoteIPPort)
-		return err
+var broker *broker
+
+// Initialize starts the node as a Broker node in the network
+func InitBroker(addr string) error {
+
+	Broker = &broker{
+		topicList: make(map[string]*Topic),
 	}
-	defer conn.Close()
-
-	// send message
-	enc := gob.NewEncoder(conn)
-	err = enc.Encode(message)
-	if err != nil {
-		log.Fatal("encode error:", err)
-	}
-
-	// response
-	dec := gob.NewDecoder(conn)
-	response := &Message{}
-	dec.Decode(response)
-	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
-
+	spawnListener(addr)
+	fmt.Println("Init Borker")
 	return nil
 }
 
-func informManager() {
-	message := Message{config.BrokerNodeID, "New Broker", config.BrokerIP, "", ""}
-	for i := 0; i < len(config.ManagerIPs); i++ {
-		provideMsg(config.ManagerIPs[i], message)
-	}
-}
+func spawnListener(addr string) {
+	bServer := new(BrokerServer)
+	rpc.Register(bServer)
 
-// Initialize starts the node as a broker node in the network
-func Initialize() bool {
-	configFilename := os.Args[1]
-	readConfigJSON(configFilename)
-
-	informManager() // when a new broker starts, it will inform the manager nodes
-
-	return true
-}
-
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("Please provide config filename. e.g. b1.json, b2.json")
-		return
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
 	}
 
-	Initialize()
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+	}
 
-	// terminal controller like shell
-	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("Serving Server at: %v\n", tcpAddr.String())
+
 	for {
-		text, _ := reader.ReadString('\n')
-		println(text)
+		conn, err := listener.Accept()
+		if err != nil {
+			continue
+		}
+		// message, _ := bufio.NewReader(conn).ReadString('\n')
+		// fmt.Println(string(message))
+		rpc.ServeConn(conn)
 	}
+}
+
+func (b *BrokerServer) StartLeader(m *Message, ack *bool) error {
+	
+	topic := Topic{
+		topicID: m.ID,
+		partitionIdx: m.PartitionIdx,
+		partition: partition{},
+		consumerOffset: make(map[consumerId]uint),
+		Status: Leader,
+		FollowerList: make(map[net.Addr]bool),
+	}
+	
+	broker.topicList = append(broker.topicList, topic) 
+
+
+	fmt.Println("Starting Leader")
+	*ack = true
+	return nil
+}
+
+func (b *BrokerServer) InitNewTopic(m *Message, res *bool) error {
+	topic := new(Topic)
+	topic.id = m.Topic
+
+	Broker.topicList[topic.id] = topic
+
+	*res = true
+	return nil
+}
+
+func (b *BrokerServer) AppendToPartition(m *Message, res *bool) error {
+	topicId := m.Topic
+	var rec record
+	copy(rec[:], m.Payload.Marshall())
+	Broker.topicList[topicId].partition = append(Broker.topicList[topicId].partition, &rec)
+	*res = true
+	return nil
+}
+
+func (b *BrokerServer) AddClient(m *Message, res *bool) error {
+	topicId := m.Topic
+	var rec record
+	copy(rec[:], m.Payload.Marshall())
+	Broker.topicList[topicId].partition = append(Broker.topicList[topicId].partition, &rec)
+	*res = true
+	return nil
+}
+
+func (b *BrokerServer) DispatchData(m *Message, res *bool) error {
+	topicID := m.Topic
+	clientId := m.Payload.Marshall()
+
+	Broker.topicList[topicID].consumerOffset[consumerId(clientId)] = 0
+	return nil
+}
+
+func (b *BrokerServer) AddFollowerToTopic(m *Message, res *bool) error {
+	topicID := m.Topic
+	followerAddr := m.Payload.Marshall()
+
+	tcpAddr, err := net.ResolveTCPAddr("tcp", string(followerAddr))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error())
+	}
+
+	Broker.topicList[topicID].FollowerList = append(Broker.topicList[topicID].FollowerList, tcpAddr)
+	return nil
+}
+
+func broadcastToFollowers(stub interface{}) error {
+	return nil
 }
