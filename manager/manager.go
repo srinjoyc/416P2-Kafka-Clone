@@ -114,6 +114,16 @@ func (s *freeNodesSet) setNodeAsBusy(ip string) {
 	// No-op if ip is not in registered set.
 }
 
+func (s *freeNodesSet) addFreeNode(ip string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if _, ok := s.set[ip]; !ok {
+		// Only add this free node if its not already in the set of free nodes.
+		s.set[ip] = true
+	}
+	// If ip is already in the set, no-op.
+}
+
 /* readConfigJSON
  * Desc:
  *		read the configration from file into struct config
