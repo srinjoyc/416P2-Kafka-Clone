@@ -1,0 +1,1 @@
+go run manager.go m2.json

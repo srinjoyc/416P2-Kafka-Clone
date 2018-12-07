@@ -13,11 +13,10 @@ import (
 )
 
 type configSetting struct {
-	NodeID             string
-	ProviderIPPort     string
-	ConsumerIPPort     string
-	InnerRPCIPPort     string
-	PeerKafkaNodeAddrs []string
+	BrokerNodeID   string
+	ManagerIPPort  string
+	ConsumerIPPort string
+	ManagerIPs     []string
 }
 
 // Message is used for communication among nodes
@@ -34,10 +33,11 @@ var config configSetting
 /* readConfigJSON
  * Desc:
  *		read the configration from file into struct config
+ *
  * @para configFile: relative url of file of configuration
  * @retrun: None
  */
- func readConfigJSON(configFile string) {
+func readConfigJSON(configFile string) {
 	jsonFile, err := os.Open(configFile)
 	if err != nil {
 		fmt.Println(err) // if we os.Open returns an error then handle it
@@ -46,82 +46,63 @@ var config configSetting
 	defer jsonFile.Close()
 }
 
-
-/* listenProvider
+/* provideMsg
+ * para message string
+ *
  * Desc:
- * 		this is a goroutine dealing with requests from provider routine
- * @para IPPort string:
- *		the ip and port opened for messages from provider routine
+ * 		send the message to kafka node by remoteIPPort
  */
-func listenProvider(IPPort string) {
-	listener, err := net.Listen("tcp4", IPPort)
+func provideMsg(remoteIPPort string, message Message) error {
+	conn, err := net.Dial("tcp", remoteIPPort)
 	if err != nil {
-		fmt.Println(err)
-		return
+		println("Fail to connect kafka manager" + remoteIPPort)
+		return err
 	}
-	defer listener.Close()
+	defer conn.Close()
 
-	fmt.Println("Listening provider at : " + IPPort)
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		go dealProvider(conn)
-	}
-}
-
-/* dealProvider
- * @para conn:
- *		the ip and port opened for messages from provider routine
- * Desc:
- * 		terminal controller like shell
- */
-func dealProvider(conn net.Conn) {
-	// decode the serialized message from the connection
-	dec := gob.NewDecoder(conn)
-	message := &Message{}
-	dec.Decode(message) // decode the infomation into initialized message
-
-	// if-else branch to deal with different types of messages
-	if message.Type == "Text" {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", message.ID, message.Type, message.Partition, message.Text)
-
-		// code about append text
-
-	} else if message.Type == "CreateTopic" {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", message.ID, message.Type, message.Topic)
-
-		// code about topic
-
-	}
-
-	// write the success response
+	// send message
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(Message{config.NodeID, "response", "succeed", "", ""})
+	err = enc.Encode(message)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
-	conn.Close()
+
+	// response
+	dec := gob.NewDecoder(conn)
+	response := &Message{}
+	dec.Decode(response)
+	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
+
+	return nil
 }
 
-
-
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("Please provide config filename. e.g. k1.json, k2.json")
-		return
+func informManager() {
+	message := Message{config.BrokerNodeID, "New Broker", config.ManagerIPPort, "", ""}
+	for i := 0; i < len(config.ManagerIPs); i++ {
+		provideMsg(config.ManagerIPs[i], message)
 	}
+}
+
+// Initialize starts the node as a broker node in the network
+func Initialize() bool {
 	configFilename := os.Args[1]
 	readConfigJSON(configFilename)
 
-	// initialize()
-	go listenProvider(config.ProviderIPPort)
+	informManager() // when a new broker starts, it will inform the manager nodes
 
-	reader := bufio.NewReader(os.Stdin)
+	return true
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Println("Please provide config filename. e.g. b1.json, b2.json")
+		return
+	}
+
+	Initialize()
+
 	// terminal controller like shell
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		text, _ := reader.ReadString('\n')
 		println(text)

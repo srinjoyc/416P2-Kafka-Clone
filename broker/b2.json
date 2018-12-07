@@ -1,7 +1,6 @@
 {
-    "NodeID": "b2",
-    "ProviderIPPort": "127.0.0.1:10002",
-    "ConsumerIPPort": "127.0.0.1:20002",
-    "InnerRPCIPPort": "127.0.0.1:30002",
-    "PeerKafkaNodeAddrs": ["127.0.0.1:30001"]
+    "BrokerNodeID": "b2",
+    "ManagerIPPort": "127.0.0.1:9002",
+    "ConsumerIPPort": "127.0.0.1:10002",
+    "ManagerIPs": ["127.0.0.1:8010", "127.0.0.1:8020", "127.0.0.1:8030"]
 }
