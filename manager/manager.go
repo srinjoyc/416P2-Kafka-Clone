@@ -23,8 +23,6 @@ var ErrInsufficientFreeNodes = errors.New("insufficient free nodes")
 
 type configSetting struct {
 	ManagerNodeID     string
-	ProviderIPPort    string
-	BrokerIPPort      string
 	ManagerIP         string
 	PeerManagerNodeIP []string
 }
@@ -183,14 +181,14 @@ func processMessage(conn net.Conn) {
 	dec.Decode(msg) // decode the infomation into initialized message
 
 	// if-else branch to deal with different types of messages
-	if msg.Type == "NewBroker" {
+	if msg.Type == message.NEW_BROKER {
 		fmt.Println(conn.RemoteAddr().String())
 		freeNodes.addFreeNode(conn.RemoteAddr().String())
 	}
-	if msg.Type == "Text" {
+	if msg.Type == message.NEW_MESSAGE {
 		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", msg.ID, msg.Type, msg.Partition, msg.Text)
 		// code about append text
-	} else if msg.Type == "CreateTopic" {
+	} else if msg.Type == message.NEW_TOPIC {
 		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
 		// get free nodes (chose based on algo)
 		freeNodes, err := freeNodes.getFreeNodes(1)
@@ -200,16 +198,16 @@ func processMessage(conn net.Conn) {
 		// contact each node to set their role
 		for idx, ip := range freeNodes {
 			fmt.Println(ip)
-			startBrokerMsg := message.Message{Type: "Start-Follower"}
+			startBrokerMsg := message.Message{Type: message.Start_Follower}
 			if idx == 0 {
-				startBrokerMsg = message.Message{Type: "Start-Leader"}
+				startBrokerMsg = message.Message{Type: message.Start_Leader}
 			}
 			provideMsg(ip, startBrokerMsg)
 		}
 	}
 	// write the success response
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	err := enc.Encode(message.Message{ID: config.ManagerNodeID, Type: message.Response, Text: "succeed"})
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}

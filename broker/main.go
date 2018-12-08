@@ -14,22 +14,10 @@ import (
 )
 
 type configSetting struct {
-	BrokerNodeID   string
-	BrokerIPPort   string
-	ManagerIPPort  string
-	ConsumerIPPort string
-	ManagerIPs     []string
-}
-
-
-// Message is used for communication among nodes
-
-type Message struct {
-	ID        string
-	Type      OPCODE
-	Text      string
-	Topic     string
-	Partition uint8
+	BrokerNodeID      string
+	BrokerIPPort      string
+	ManagerIPPorts    []string
+	PeerBrokerIPPorts []string
 }
 
 var config configSetting
@@ -55,13 +43,13 @@ func readConfigJSON(configFile string) error {
 	return nil
 }
 
-/* provideMsg
+/* sendMessage
  * para message string
  *
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, message Message) error {
+func sendMessage(remoteIPPort string, msg message.Message) error {
 	conn, err := net.Dial("tcp", remoteIPPort)
 	if err != nil {
 		println("Fail to connect kafka manager" + remoteIPPort)
@@ -71,7 +59,7 @@ func provideMsg(remoteIPPort string, message Message) error {
 
 	// send message
 	enc := gob.NewEncoder(conn)
-	err = enc.Encode(message)
+	err = enc.Encode(msg)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
@@ -86,9 +74,9 @@ func provideMsg(remoteIPPort string, message Message) error {
 }
 
 func informManager() {
-	m := message.Message{config.BrokerNodeID, "New Broker", s(config.ManagerIPPort)}
+	m := message.Message{ID: config.BrokerNodeID, Type: message.NEW_BROKER, Text: config.BrokerIPPort}
 	for i := 0; i < len(config.ManagerIPs); i++ {
-		provideMsg(config.ManagerIPs[i], message)
+		sendMessage(config.ManagerIPs[i], m)
 	}
 }
 
@@ -124,10 +112,6 @@ func main() {
 		text, _ := reader.ReadString('\n')
 		println(text)
 	}
-}
-
-func (s s) Marshall() []byte {
-	return []byte(string(s))
 }
 
 func checkError(err error) {
