@@ -27,6 +27,7 @@ type configSetting struct {
 	ManagerNodeID     string
 	ManagerIP         string
 	PeerManagerNodeIP []string
+	BACKUP            bool
 }
 
 var config configSetting
@@ -40,7 +41,13 @@ var freeNodes = freeNodesSet{
 }
 
 var channelMap = make(map[string]map[uint8]channel)
+var IS_BACKUP = false
 
+// just to help unpack maps from other nodes
+type backupMap struct {
+	backup map[string]map[uint8]channel
+	msg    string
+}
 type channel struct {
 	topicName   string
 	partition   uint8
@@ -183,11 +190,21 @@ func listenForMessages() {
  *
  */
 func processMessage(conn net.Conn) {
+	// check if msg is from other manager
+	senderIP := conn.RemoteAddr().String()
+	// first handle cases if this is the manager backup
+	// THIS variable can be turned off through a special manager msg
+	if IS_BACKUP == true {
+		dec := gob.NewDecoder(conn)
+		newMap := &backupMap{}
+		dec.Decode(newMap)
+		channelMap = newMap.backup
+		return
+	}
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
 	msg := &message.Message{}
 	dec.Decode(msg) // decode the infomation into initialized message
-	senderIP := conn.RemoteAddr().String()
 	// if-else branch to deal with different types of messages
 
 	// NEW BROKER ON NETWORK, LETTING US KNOW.
@@ -292,7 +309,15 @@ func processMessage(conn net.Conn) {
 		if err != nil {
 			fmt.Println(err)
 		}
+	} else if msg.Type == message.MANAGER_SYNC {
+		enc := gob.NewEncoder(conn)
+		sendBackup := &backupMap{backup: channelMap, msg: "normal"}
+		err := enc.Encode(sendBackup)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
+
 	conn.Close()
 }
 
@@ -343,7 +368,7 @@ func provideMsg(remoteIPPort string, outgoing message.Message) error {
 func Initialize() bool {
 	configFilename := os.Args[1]
 	readConfigJSON(configFilename)
-
+	IS_BACKUP = config.BACKUP
 	println("Manager", config.ManagerNodeID, "starts")
 	go listenForMessages()
 
