@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+
+	"../lib/message"
 )
 
 type Packet interface {
@@ -86,14 +88,13 @@ func spawnListener(addr string) {
 			continue
 		}
 
-
 		// message, _ := bufio.NewReader(conn).ReadString('\n')
 		// fmt.Println(string(message))
 		rpc.ServeConn(conn)
 	}
 }
 
-func (b *BrokerServer) StartLeader(m *Message, ack *bool) error {
+func (b *BrokerServer) StartLeader(m *message.Message, ack *bool) error {
 
 	topic := Topic{
 		topicID:        m.ID,

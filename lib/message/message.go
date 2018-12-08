@@ -11,10 +11,14 @@ type ROLE uint
 const (
 	NEW_BROKER OPCODE = iota
 	NEW_TOPIC
+	NEW_MESSAGE
 	DISPATCH
+	Start_Follower
+	Start_Leader
+	Response
 )
 
-const(
+const (
 	MANAGER ROLE = iota
 	LEADER
 	FOLLOWER
@@ -28,6 +32,6 @@ type Message struct {
 	Text      string
 	Topic     string
 	Partition uint8
-	Role	ROLE
+	Role      ROLE
 	timestamp time.Time
 }
