@@ -8,10 +8,9 @@ import (
 	"log"
 	"net"
 	"os"
-	"time"
 
 	"../lib/IOlib"
-	message "../lib/message"
+	"../lib/message"
 )
 
 type configSetting struct {
@@ -20,6 +19,15 @@ type configSetting struct {
 	ConsumerIPPort string
 	FollowerIPs    []string
 	ManagerIPs     []string
+}
+
+// Message is used for communication among nodes
+type Message struct {
+	ID        string
+	Type      string
+	Text      string
+	Topic     string
+	Partition string
 }
 
 var config configSetting
@@ -46,7 +54,7 @@ func readConfigJSON(configFile string) {
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, msg message.Message) error {
+func provideMsg(remoteIPPort string, message Message) error {
 	tcplAddr, err := net.ResolveTCPAddr("tcp", config.BrokerIP)
 	tcprAddr, err := net.ResolveTCPAddr("tcp", remoteIPPort)
 	if err != nil {
@@ -62,14 +70,14 @@ func provideMsg(remoteIPPort string, msg message.Message) error {
 
 	// send message
 	enc := gob.NewEncoder(conn)
-	err = enc.Encode(msg)
+	err = enc.Encode(message)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
 
 	// response
 	dec := gob.NewDecoder(conn)
-	response := &message.Message{}
+	response := &Message{}
 	dec.Decode(response)
 	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
@@ -77,8 +85,10 @@ func provideMsg(remoteIPPort string, msg message.Message) error {
 }
 
 func informManager() {
-	message := message.Message{ID: "consumer", Type: message.GET_LEADER, Text: "find leader of topic", Topic: "general", Role: message.LEADER, Partition: 0, Timestamp: time.Now()}
-	provideMsg(config.ManagerIPs[0], message)
+	message := Message{config.BrokerNodeID, "NewBroker", config.BrokerIP, "", ""}
+	for i := 0; i < len(config.ManagerIPs); i++ {
+		provideMsg(config.ManagerIPs[i], message)
+	}
 }
 
 func listenForMessages() {
