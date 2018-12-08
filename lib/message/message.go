@@ -9,19 +9,21 @@ type OPCODE uint
 type ROLE uint
 
 const (
-	NEW_BROKER OPCODE = iota
-	NEW_TOPIC
-	NEW_MESSAGE
-	DISPATCH
-	Start_Follower
-	Start_Leader
-	Response
+	NEW_BROKER   OPCODE = iota
+	NEW_TOPIC           // start a new topic (manager chooses leader/followers and start the leader)
+	START_LEADER        // start a leader given a particular topic & partition
+	GET_LEADER          // push to an existing topic
+	INFO                //random text msg about the system
+	LEADER_NODE_DOWN
+	FOLLOWER_NODE_DOWN
+	PROMOTE
 )
 
 const (
 	MANAGER ROLE = iota
 	LEADER
 	FOLLOWER
+	PROVIDER
 	UNID
 )
 
@@ -33,5 +35,5 @@ type Message struct {
 	Topic     string
 	Partition uint8
 	Role      ROLE
-	timestamp time.Time
+	Timestamp time.Time
 }

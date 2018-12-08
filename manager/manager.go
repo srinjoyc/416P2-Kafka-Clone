@@ -9,7 +9,9 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"../lib/IOlib"
 	message "../lib/message"
@@ -29,11 +31,6 @@ type configSetting struct {
 
 var config configSetting
 
-var brokersList struct {
-	list  []string
-	mutex sync.Mutex
-}
-
 // manager keeps track of all free nodes (i.e. nodes that are ready to be 'provisioned'.
 // If this manager goes down, it will need to ensure that the other managers
 // have the correct copy of this set.
@@ -42,6 +39,17 @@ var freeNodes = freeNodesSet{
 	set: make(map[string]bool),
 }
 
+var channelMap = make(map[string]map[uint8]channel)
+
+type channel struct {
+	topicName   string
+	partition   uint8
+	leaderIP    string
+	followerIPs string
+	available   bool
+}
+
+//var topicMap =
 // freeNodesSet contains a set of nodes for the entire topology.
 // if set[nodeIP] == true,  node is free
 // if set[nodeIP] == false, node is busy
@@ -179,39 +187,126 @@ func processMessage(conn net.Conn) {
 	dec := gob.NewDecoder(conn)
 	msg := &message.Message{}
 	dec.Decode(msg) // decode the infomation into initialized message
-
+	senderIP := conn.RemoteAddr().String()
 	// if-else branch to deal with different types of messages
+
+	// NEW BROKER ON NETWORK, LETTING US KNOW.
 	if msg.Type == message.NEW_BROKER {
 		fmt.Println(conn.RemoteAddr().String())
-		freeNodes.addFreeNode(conn.RemoteAddr().String())
-	}
-	if msg.Type == message.NEW_MESSAGE {
-		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", msg.ID, msg.Type, msg.Partition, msg.Text)
-		// code about append text
-	} else if msg.Type == message.NEW_TOPIC {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
-		// get free nodes (chose based on algo)
-		freeNodes, err := freeNodes.getFreeNodes(1)
+		freeNodes.addFreeNode(senderIP)
+		enc := gob.NewEncoder(conn)
+		managerIPs := ""
+		for _, ip := range config.PeerManagerNodeIP {
+			managerIPs += ip + ";"
+		}
+		err := enc.Encode(message.Message{Type: message.INFO, Text: managerIPs, Timestamp: time.Now()})
 		if err != nil {
 			fmt.Println(err)
 		}
+	}
+
+	// NETWORK INFO MSG (RANDOM/TESTING)
+	if msg.Type == message.INFO {
+		fmt.Printf("Receive info Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", msg.ID, msg.Type, msg.Partition, msg.Text)
+		// code about append text
+
+		// NEW TOPIC BEING CREATED
+	} else if msg.Type == message.NEW_TOPIC {
+		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
+		// get free nodes (chose based on algo)
+		clusterNodes, err := freeNodes.getFreeNodes(1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		followerIPs := ""
 		// contact each node to set their role
-		for idx, ip := range freeNodes {
+		for idx, ip := range clusterNodes {
 			fmt.Println(ip)
-			startBrokerMsg := message.Message{Type: message.Start_Follower}
 			if idx == 0 {
-				startBrokerMsg = message.Message{Type: message.Start_Leader}
+				continue
+			} else {
+				followerIPs += ip
 			}
-			provideMsg(ip, startBrokerMsg)
+		}
+		startBrokerMsg := message.Message{ID: config.ManagerIP, Type: message.START_LEADER, Text: followerIPs, Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
+		fmt.Println(startBrokerMsg)
+		enc := gob.NewEncoder(conn)
+		err = enc.Encode(startBrokerMsg)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if channelMap[msg.Topic] == nil {
+			channelMap[msg.Topic] = make(map[uint8]channel)
+		}
+		channelMap[msg.Topic][msg.Partition] = channel{msg.Topic, msg.Partition, clusterNodes[0], followerIPs, true}
+
+		// REQUEST TO FIND THE LEADER OF A TOPIC/PARTITION COMBO
+	} else if msg.Type == message.GET_LEADER {
+		leaderIP := channelMap[msg.Topic][msg.Partition].leaderIP
+		providerMsg := message.Message{ID: config.ManagerIP, Type: message.GET_LEADER, Text: leaderIP, Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
+		enc := gob.NewEncoder(conn)
+		err := enc.Encode(providerMsg)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		// GETS A FAILURE FROM ANOTHER NODE
+	} else if msg.Type == message.FOLLOWER_NODE_DOWN {
+		followerIP := msg.Text
+		affectedChannel := channelMap[msg.Topic][msg.Partition]
+		affectedChannel.followerIPs = removeIPFromStringList(followerIP, affectedChannel.followerIPs)
+		newFollower, err := freeNodes.getFreeNodes(1)
+		affectedChannel.followerIPs += newFollower[0] + ";"
+		if err != nil {
+			fmt.Println(err)
+		}
+		leaderMsg := message.Message{ID: config.ManagerIP, Type: message.FOLLOWER_NODE_DOWN, Text: newFollower[0], Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
+		enc := gob.NewEncoder(conn)
+		err = enc.Encode(leaderMsg)
+		if err != nil {
+			fmt.Println(err)
+		}
+		// LEADER HAS FAILED
+	} else if msg.Type == message.LEADER_NODE_DOWN {
+		leaderIP := msg.Text
+		promotedNodeIP := ""
+		affectedChannel := channel{}
+		for _, partition := range channelMap {
+			for _, channel := range partition {
+				if channel.leaderIP == leaderIP {
+					affectedChannel = channel
+					promotedNodeIP = strings.Split(channel.followerIPs, ";")[0]
+					channel.leaderIP = promotedNodeIP
+					channel.followerIPs = removeIPFromStringList(promotedNodeIP, channel.followerIPs)
+				}
+			}
+		}
+		newFollower, err := freeNodes.getFreeNodes(1)
+		affectedChannel.followerIPs += newFollower[0] + ";"
+		if err != nil {
+			fmt.Println(err)
+		}
+		promoteMsg := message.Message{ID: config.ManagerIP, Type: message.PROMOTE, Text: newFollower[0], Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
+		enc := gob.NewEncoder(conn)
+		err = enc.Encode(promoteMsg)
+		if err != nil {
+			fmt.Println(err)
 		}
 	}
-	// write the success response
-	enc := gob.NewEncoder(conn)
-	err := enc.Encode(message.Message{ID: config.ManagerNodeID, Type: message.Response, Text: "succeed"})
-	if err != nil {
-		log.Fatal("encode error:", err)
-	}
 	conn.Close()
+}
+
+// removes an ip from an ip list seperated by ';'
+func removeIPFromStringList(removeIP string, ipList string) (newIPList string) {
+	s := strings.Split(ipList, ";")
+	for _, ip := range s {
+		if ip == removeIP {
+			continue
+		} else if ip != "" {
+			newIPList += ip + ";"
+		}
+	}
+	return newIPList
 }
 
 /* provideMsg
@@ -239,7 +334,7 @@ func provideMsg(remoteIPPort string, outgoing message.Message) error {
 	dec := gob.NewDecoder(conn)
 	response := &message.Message{}
 	dec.Decode(response)
-	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
+	fmt.Printf("Response : {senderID:%s, response:%s}\n", response.ID, response.Text)
 
 	return nil
 }
@@ -263,7 +358,7 @@ func main() {
 	for {
 		cmd, _ := reader.ReadString('\n')
 		if cmd == "broker\n" {
-			fmt.Println(brokersList.list)
+			fmt.Println(channelMap)
 		}
 	}
 }
