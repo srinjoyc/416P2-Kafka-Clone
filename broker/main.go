@@ -21,16 +21,16 @@ type configSetting struct {
 	ManagerIPs     []string
 }
 
-type s string
 
 // Message is used for communication among nodes
-// type Message struct {
-// 	ID        string
-// 	Type      string
-// 	Text      string
-// 	Topic     string
-// 	Partition string
-// }
+
+type Message struct {
+	ID        string
+	Type      OPCODE
+	Text      string
+	Topic     string
+	Partition uint8
+}
 
 var config configSetting
 

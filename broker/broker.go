@@ -34,12 +34,12 @@ type Topic struct {
 	FollowerList map[net.Addr]bool
 }
 
-type Message struct {
-	Topic        string
-	ID           string
-	PartitionIdx uint8
-	Payload      Packet
-}
+// type Message struct {
+// 	Topic   string
+// 	ID      string
+// 	PartitionIdx uint8
+// 	Payload Packet
+// }
 
 const (
 	Leader Status = iota
@@ -50,12 +50,12 @@ type broker struct {
 	topicList map[string]*Topic
 }
 
-var broker *broker
+var b *broker
 
 // Initialize starts the node as a Broker node in the network
 func InitBroker(addr string) error {
 
-	Broker = &broker{
+	b = &broker{
 		topicList: make(map[string]*Topic),
 	}
 	spawnListener(addr)
@@ -82,8 +82,11 @@ func spawnListener(addr string) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			fmt.Println(err)
 			continue
 		}
+
+
 		// message, _ := bufio.NewReader(conn).ReadString('\n')
 		// fmt.Println(string(message))
 		rpc.ServeConn(conn)
