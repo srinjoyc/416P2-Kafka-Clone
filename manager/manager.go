@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"../lib/IOlib"
-	"../lib/message"
+	message "../lib/message"
 )
 
 // Error types
@@ -40,7 +40,9 @@ var brokersList struct {
 // If this manager goes down, it will need to ensure that the other managers
 // have the correct copy of this set.
 // Initialize this set to a bunch of free nodes on manager startup, probably via a json config.
-var freeNodes freeNodesSet
+var freeNodes = freeNodesSet{
+	set: make(map[string]bool),
+}
 
 // freeNodesSet contains a set of nodes for the entire topology.
 // if set[nodeIP] == true,  node is free
@@ -140,33 +142,6 @@ func readConfigJSON(configFile string) {
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
 }
 
-/* listenProvider
- * Desc:
- * 		this is a goroutine dealing with requests from provider routine
- *
- * @para IPPort string:
- *		the ip and port opened for messages from provider routine
- */
-func listenProvider() {
-	listener, err := net.Listen("tcp4", config.ProviderIPPort)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer listener.Close()
-
-	fmt.Println("Listening provider at :" + config.ProviderIPPort)
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		go handleProviderMessage(conn)
-	}
-}
-
 /* listenManagers()
  * Desc:
  * 		this is a goroutine dealing with other manger nodes
@@ -174,7 +149,7 @@ func listenProvider() {
  * @para IPPort [string]:
  *		The list of neighbouring managers
  */
-func listenManagers() {
+func listenForMessages() {
 	listener, err := net.Listen("tcp4", config.ManagerIP)
 	if err != nil {
 		fmt.Println(err)
@@ -190,7 +165,7 @@ func listenManagers() {
 			fmt.Println(err)
 			return
 		}
-		go dealManager(conn)
+		go processMessage(conn)
 	}
 }
 
@@ -201,25 +176,37 @@ func listenManagers() {
  * Desc: Handles all messages from other managers
  *
  */
-func dealManager(conn net.Conn) {
+func processMessage(conn net.Conn) {
 	// decode the serialized message from the connection
 	dec := gob.NewDecoder(conn)
 	msg := &message.Message{}
 	dec.Decode(msg) // decode the infomation into initialized message
 
 	// if-else branch to deal with different types of messages
+	if msg.Type == "NewBroker" {
+		fmt.Println(conn.RemoteAddr().String())
+		freeNodes.addFreeNode(conn.RemoteAddr().String())
+	}
 	if msg.Type == "Text" {
 		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", msg.ID, msg.Type, msg.Partition, msg.Text)
-
 		// code about append text
-
 	} else if msg.Type == "CreateTopic" {
-		fmt.Printf("Receive Manager Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
-
-		// code about topic
-
+		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
+		// get free nodes (chose based on algo)
+		freeNodes, err := freeNodes.getFreeNodes(1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		// contact each node to set their role
+		for idx, ip := range freeNodes {
+			fmt.Println(ip)
+			startBrokerMsg := message.Message{Type: "Start-Follower"}
+			if idx == 0 {
+				startBrokerMsg = message.Message{Type: "Start-Leader"}
+			}
+			provideMsg(ip, startBrokerMsg)
+		}
 	}
-
 	// write the success response
 	enc := gob.NewEncoder(conn)
 	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
@@ -229,94 +216,34 @@ func dealManager(conn net.Conn) {
 	conn.Close()
 }
 
-/* dealProvider
- * @para conn:
- *		the ip and port opened for messages from provider routine
+/* provideMsg
+ * para message string
  *
  * Desc:
- *
+ * 		send the message to kafka node by remoteIPPort
  */
-func handleProviderMessage(conn net.Conn) {
-	// decode the serialized message from the connection
-	defer conn.Close()
-	dec := gob.NewDecoder(conn)
-
-	incoming := &message.Message{}
-	dec.Decode(incoming) // decode the infomation into initialized message
-
-	// if-else branch to deal with different types of messages
-	if incoming.Type == "Text" {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", incoming.ID, incoming.Type, incoming.Partition, incoming.Text)
-
-		// code about append text
-
-	} else if incoming.Type == "CreateTopic" {
-		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", incoming.ID, incoming.Type, incoming.Topic)
-
-		// code about topic
-
+func provideMsg(remoteIPPort string, outgoing message.Message) error {
+	conn, err := net.Dial("tcp", remoteIPPort)
+	if err != nil {
+		println("Fail to connect kafka manager" + remoteIPPort)
+		return err
 	}
+	defer conn.Close()
 
-	// write the success response
+	// send message
 	enc := gob.NewEncoder(conn)
-	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
+	err = enc.Encode(outgoing)
 	if err != nil {
 		log.Fatal("encode error:", err)
 	}
-}
 
-func listenBroker() {
-	listener, err := net.Listen("tcp4", config.BrokerIPPort)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer listener.Close()
-
-	fmt.Println("Listening broker at :" + config.BrokerIPPort)
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		go handleBrokerMessage(conn)
-	}
-}
-
-func handleBrokerMessage(conn net.Conn) {
-	defer conn.Close()
-	// decode the serialized message from the connection
+	// response
 	dec := gob.NewDecoder(conn)
-	incoming := &message.Message{}
-	dec.Decode(incoming) // decode the infomation into initialized message
+	response := &message.Message{}
+	dec.Decode(response)
+	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
-	// if-else branch to deal with different types of messages
-	if incoming.Type == "New Broker" {
-		fmt.Printf("Receive Broker Msg: {pID:%s, type:%s, partition:%s, text:%s}\n", incoming.ID, incoming.Type, incoming.Partition, incoming.Text)
-
-		// code about append the broker
-		brokersList.mutex.Lock()
-		flag := false
-		for _, ip := range brokersList.list {
-			if ip == incoming.Text {
-				flag = true
-				break
-			}
-		}
-		if flag == false {
-			brokersList.list = append(brokersList.list, incoming.Text)
-		}
-		brokersList.mutex.Unlock()
-	}
-
-	// write the success response
-	enc := gob.NewEncoder(conn)
-	err := enc.Encode(message.Message{config.ManagerNodeID, "response", "succeed", "", ""})
-	if err != nil {
-		log.Fatal("encode error:", err)
-	}
+	return nil
 }
 
 // Initialize starts the node as a Manager node in the network
@@ -325,10 +252,7 @@ func Initialize() bool {
 	readConfigJSON(configFilename)
 
 	println("Manager", config.ManagerNodeID, "starts")
-
-	go listenProvider()
-	go listenBroker()
-	go listenManagers()
+	go listenForMessages()
 
 	return true
 }

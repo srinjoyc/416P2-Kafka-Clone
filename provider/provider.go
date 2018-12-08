@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"../lib/IOlib"
-	"../lib/message"
+	message "../lib/message"
 )
 
 type configSetting struct {
@@ -166,9 +166,9 @@ func main() {
 		}
 		topic := os.Args[3]
 		partition := os.Args[4]
-		message := os.Args[5]
+		argMsg := os.Args[5]
 		// send msg
-		msg := Message{config.ProviderID, "Text", message, topic, partition}
+		msg := message.Message{config.ProviderID, "CreateTopic", argMsg, topic, partition}
 		provideMsg(config.KafkaManagerIPPorts[0], msg)
 
 		//provideMsgToKafka(topic, partition, message)
