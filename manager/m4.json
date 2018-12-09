@@ -1,6 +1,6 @@
 {
-    "ManagerNodeID": "m3",
-    "ManagerIP": "127.0.0.1:9083",
+    "ManagerNodeID": "m4",
+    "ManagerIP": "127.0.0.1:9084",
     "PeerManagerNodeIP": "127.0.0.1:9080",
     "BACKUP": false
 }
