@@ -1,0 +1,6 @@
+{
+    "ManagerNodeID": "m6",
+    "ManagerIP": "127.0.0.1:9086",
+    "PeerManagerNodeIP": "127.0.0.1:9080",
+    "BACKUP": false
+}

@@ -454,7 +454,6 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	}
 
 	fmt.Println("Ready to invoke service")
-
 	if err := rpcClient.Call("ManagerRPCServer.RegisterPeer", newMsg, &peerList); err != nil {
 		return err
 	}
@@ -486,9 +485,15 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 
 
 func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]string) error {
+	fmt.Println("Calling three pc")
+
+	fmt.Println("Current Peers: ", manager.ManagerPeers)
+
+
 	if err := mrpc.threePC("RegisterPeer", msg); err != nil {
 		return err
 	}
+
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
 		(*peerList)[string(k)] = v.String()
@@ -501,15 +506,15 @@ func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]
 
 func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message) error {
 	// canCommitPhase
-	if err := mrpc.canCommit("RegisterPeer", msg); err != nil {
+	if err := mrpc.canCommit(serviceMethod, msg); err != nil {
 		return err
 	}
 	// preCommitPhase
-	if err := mrpc.preCommit("RegisterPeer", msg); err != nil {
+	if err := mrpc.preCommit(serviceMethod, msg); err != nil {
 		return err
 	}
 	// commitPhase
-	if err := mrpc.commit("RegisterPeer", msg); err != nil {
+	if err := mrpc.commit(serviceMethod, msg); err != nil {
 		return err
 	}
 	return nil
@@ -523,10 +528,10 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message) er
 	manager.ManagerMutex.Lock()
 	fmt.Println("Break1")
 	for _, managerPeer := range manager.ManagerPeers {
+		fmt.Println("Peer addr: ", managerPeer.String())
 		wg.Add(1)
-		go func() {
+		go func(managerPeerAddr net.Addr) {
 			// Prevent Closure
-			managerPeerAddr := managerPeer
 			defer func() {
 				if p := recover(); p != nil {
 					errorCh <- fmt.Errorf("bad connection - %v: %v", managerPeerAddr, p)
@@ -544,10 +549,15 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message) er
 				errorCh <- fmt.Errorf("manager peer - %v: %v", managerPeerAddr, err)
 				return
 			}
+
+
 			if !ack {
 				errorCh <- fmt.Errorf("peer - %v disagrees", managerPeerAddr)
 			}
-		}()
+
+			fmt.Println("Can commit response: ",managerPeerAddr, ack)
+
+		}(managerPeer)
 	}
 	fmt.Println("Break2")
 	manager.TransactionCache.Add(msg.Hash(), WAIT)
@@ -592,8 +602,7 @@ func (mrpc *ManagerRPCServer) preCommit(serviceMethod string, msg *m.Message) er
 
 	for _, managerPeer := range manager.ManagerPeers {
 		wg.Add(1)
-		go func() {
-			managerPeerAddr := managerPeer
+		go func(managerPeerAddr net.Addr) {
 			defer wg.Done()
 			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
@@ -609,7 +618,7 @@ func (mrpc *ManagerRPCServer) preCommit(serviceMethod string, msg *m.Message) er
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
 			}
-		}()
+		}(managerPeer)
 	}
 
 	c := make(chan struct{})
@@ -633,8 +642,7 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 	wg := sync.WaitGroup{}
 	for _, managerPeer := range manager.ManagerPeers {
 		wg.Add(1)
-		go func() {
-			managerPeerAddr:=managerPeer
+		go func(managerPeerAddr net.Addr) {
 			defer wg.Done()
 			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
@@ -647,10 +655,12 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 				errorCh <- err
 				return
 			}
+			
+
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
 			}
-		}()
+		}(managerPeer)
 
 	}
 
@@ -716,7 +726,6 @@ func (mrpc *ManagerRPCServer) PreCommitRegisterPeerRPC(msg *m.Message, ack *bool
 func (mrpc *ManagerRPCServer) CommitRegisterPeerRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 	peerManagerID := ManagerNodeID(msg.ID)
-
 	peerManagerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
 
 	fmt.Println(peerManagerAddr, peerManagerID)
@@ -906,6 +915,8 @@ func shell() {
 			fmt.Printf("%v\n", server)
 		} else if cmd == "topicmap\n" {
 
+		} else if cmd == "peer\n"{
+			fmt.Println(manager.ManagerPeers)
 		}
 	}
 }
@@ -928,6 +939,7 @@ func main() {
 
 func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{}, reply interface{}) error {
 	rpcCall := rpcClient.Go(serviceMethod, args, reply, nil)
+	defer rpcClient.Close()
 
 	select {
 	case doneCall := <-rpcCall.Done:

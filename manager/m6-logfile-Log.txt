@@ -1,0 +1,6 @@
+m6 {"m6":1}
+Initialization Complete
+m6 {"m6":2}
+Making RPC call
+m6 {"m1":25, "m6":3, "m2":20, "m4":27, "m5":2}
+Received RPC Call response from server
