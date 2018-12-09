@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,11 +9,13 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	message "../lib/message"
+	"github.com/serialx/hashring"
 
 	"github.com/DistributedClocks/GoVector/govec"
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
@@ -32,6 +35,7 @@ type ManagerNode struct {
 	TopicMap      map[TopicID]Topic
 	ManagerPeers  map[ManagerNodeID]net.Addr
 	BrokerNodes   map[BrokerID]net.Addr
+	BrokerNodesIP []string
 	TopicMutex    *sync.Mutex
 	ManagerMutex  *sync.Mutex
 	BrokerMutex   *sync.Mutex
@@ -64,6 +68,8 @@ var manager *ManagerNode
 
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
+
+var ring *hashring.HashRing
 
 //----------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -393,8 +399,10 @@ func Initialize(configFileName string) error {
 		}
 	}
 
-	spawnRPCServer()
+	var emptylist []string
+	ring = hashring.New(emptylist)
 
+	spawnRPCServer()
 	return nil
 
 	// listenForMessages()
@@ -450,6 +458,8 @@ func (m *ManagerNode) addManagerPeerRPC(managerPeerAddr string) (err error) {
 	manager.ManagerMutex.Lock()
 	manager.ManagerPeers[res] = rAddr
 	manager.ManagerMutex.Unlock()
+
+	ring = ring.AddNode(rAddr.String())
 
 	fmt.Printf("Added Peer request: %v - %v\n", res, rAddr.String())
 
@@ -549,21 +559,23 @@ func (mrpc *ManagerRPCServer) RegisterBroker(m *message.Message, ack *bool) erro
 	select {
 	case err := <-c:
 
-		if err != nil{
+		if err != nil {
 			return nil
 		}
 		// use err and reply
-	case <-time.After(time.Duration(3)*time.Second):
-		fmt.Println
+	case <-time.After(time.Duration(3) * time.Second):
 		// call timed out
 	}
 
-	
 	fmt.Println("Done Ping")
 
-	// if err := manager.addBroker(BrokerID(m.ID), rAddr); err != nil {
-	// 	return err
-	// }
+	// add the broker informtaion into list
+	// manager.addBroker(BrokerID(m.ID), rAddr)
+
+	if err := manager.addBroker(BrokerID(m.ID), rAddr); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -589,6 +601,59 @@ func (m *ManagerNode) addBroker(nodeID BrokerID, brokerAddr net.Addr) error {
 
 // }
 
+func (m *ManagerRPCServer) CreateNewTopic(request *message.Message, response *message.Message) error {
+	println(request.Topic)
+	response.ID = config.ManagerNodeID
+	response.Role = message.MANAGER
+	response.Timestamp = time.Now()
+	response.Type = message.MANAGER_RESPONSE_TO_PROVIDER
+
+	if int(request.Partition) > len(manager.BrokerNodes) {
+		response.Text = "At most " + strconv.Itoa(len(manager.BrokerNodes)) + " partitions"
+		response.Ack = false
+	} else {
+		response.IPs = getHashingNodes(request.Topic, int(request.Partition))
+		response.Ack = true
+	}
+
+	return nil
+}
+
+func getHashingNodes(key string, replicaCount int) []string {
+	var list []string
+	for _, v := range manager.BrokerNodes {
+		list = append(list, v.String())
+	}
+
+	ring := hashring.New(list)
+	server, _ := ring.GetNodes(key, replicaCount)
+
+	return server
+}
+
+func shell() {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		cmd, _ := reader.ReadString('\n')
+		if cmd == "broker\n" {
+			fmt.Printf("%v\n", manager.BrokerNodes)
+		} else if cmd == "ring\n" {
+
+			server, _ := ring.GetNode("my_key")
+			println(server)
+
+		} else if cmd == "ring2\n" {
+			var v string
+			fmt.Scanf("%s", &v)
+
+			var n int
+			fmt.Scanf("%d", &n)
+			server := getHashingNodes(v, n)
+			fmt.Printf("%v\n", server)
+		}
+	}
+}
+
 func main() {
 
 	if len(os.Args) != 2 {
@@ -598,5 +663,8 @@ func main() {
 
 	configFileName := os.Args[1]
 
+	go shell()
+
 	Initialize(configFileName)
+
 }

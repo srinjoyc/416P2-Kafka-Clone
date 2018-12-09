@@ -17,6 +17,7 @@ const (
 	PROMOTE
 	MANAGER_SYNC
 	MANAGER_PUSH
+	MANAGER_RESPONSE_TO_PROVIDER
 )
 
 const (
@@ -36,4 +37,6 @@ type Message struct {
 	Partition uint8
 	Role      ROLE
 	Timestamp time.Time
+	Ack       bool
+	IPs       []string
 }
