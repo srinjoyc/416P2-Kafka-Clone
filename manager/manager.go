@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	message "../lib/message"
 
@@ -522,20 +523,47 @@ func (mrpc *ManagerRPCServer) RegisterBroker(m *message.Message, ack *bool) erro
 
 	rAddr, err := net.ResolveTCPAddr("tcp", m.Text)
 
-	rpcClient, err := vrpc.RPCDial("tcp", rAddr.String(), logger, loggerOptions)
+	// conn, err := net.DialTCP("tcp", nil, rAddr)
 
-	defer rpcClient.Close()
 	if err != nil {
 		return err
 	}
 
-	if err := rpcClient.Call("BrokerRPCServer.Ping", config.ManagerIP, &ack); err != nil {
-		return nil
+	newMsg := message.Message{
+		Text: manager.ManagerIP.String(),
 	}
 
-	if err := manager.addBroker(BrokerID(m.ID), rAddr); err != nil {
-		return err
+	// rpcClient := rpc.NewClient(conn)
+
+	rpcClient, err := vrpc.RPCDial("tcp", rAddr.String(), logger, loggerOptions)
+
+	// defer rpcClient.Close()
+	// if err != nil {
+	// 	return err
+	// }
+	fmt.Println("Ready to Ping")
+
+	c := make(chan error, 1)
+	go func() { c <- rpcClient.Call("BrokerRPCServer.Ping", newMsg, &ack) }()
+
+	select {
+	case err := <-c:
+
+		if err != nil{
+			return nil
+		}
+		// use err and reply
+	case <-time.After(time.Duration(3)*time.Second):
+		fmt.Println
+		// call timed out
 	}
+
+	
+	fmt.Println("Done Ping")
+
+	// if err := manager.addBroker(BrokerID(m.ID), rAddr); err != nil {
+	// 	return err
+	// }
 	return nil
 }
 

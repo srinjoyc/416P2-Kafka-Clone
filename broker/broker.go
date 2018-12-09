@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	m "../lib/message"
+	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
 type Status int
@@ -54,13 +55,14 @@ func InitBroker(addr string) error {
 
 	go spawnListener(addr)
 
-	if err := registerBrokerWithManager(); err!=nil{
+	if err := registerBrokerWithManager(); err != nil {
 		return err
 	}
 
 	fmt.Println("Init Borker")
 
-	for ;;{}
+	for {
+	}
 	return nil
 }
 
@@ -68,8 +70,9 @@ func InitBroker(addr string) error {
 func spawnListener(addr string) {
 	fmt.Println(addr)
 
-	bServer := new(BrokerRPCServer)
-	rpc.Register(bServer)
+	bRPC := new(BrokerRPCServer)
+	server := rpc.NewServer()
+	server.Register(bRPC)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -83,14 +86,7 @@ func spawnListener(addr string) {
 
 	fmt.Printf("Serving Server at: %v\n", tcpAddr.String())
 
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		rpc.ServeConn(conn)
-	}
+	vrpc.ServeRPCConn(server, listener, logger, loggerOptions)
 }
 
 // func handleConnection(conn net.Conn) {
@@ -217,7 +213,7 @@ func (bs *BrokerRPCServer) StartLeader(message *m.Message, ack *bool) error {
 		return fmt.Errorf("Topic ID has already existed")
 	}
 
-	if message.Text == ""{
+	if message.Text == "" {
 		fmt.Println("text is empty")
 		return nil
 	}
@@ -228,14 +224,13 @@ func (bs *BrokerRPCServer) StartLeader(message *m.Message, ack *bool) error {
 
 	fmt.Printf("%+v\n", followerMessage)
 
-
 	var waitGroup sync.WaitGroup
 
 	waitGroup.Add(len(followersIP))
 
-	fmt.Println("follower len",len(followersIP))
+	fmt.Println("follower len", len(followersIP))
 
-	for _, ip := range followersIP{
+	for _, ip := range followersIP {
 		fmt.Println("Looping")
 		go broadcastToFollowers(*followerMessage, ip, &waitGroup)
 	}
@@ -257,14 +252,14 @@ func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) err
 
 	conn, err := net.DialTCP("tcp", nil, destAddr)
 
-	if err != nil{
+	if err != nil {
 		fmt.Println(err)
 	}
 
 	rpcClient := rpc.NewClient(conn)
 
 	var ack bool
-	
+
 	if err := rpcClient.Call("BrokerRPCServer.StartFollower", message, &ack); err != nil {
 		return err
 	}
@@ -274,8 +269,11 @@ func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) err
 	return nil
 }
 
-func (bs *BrokerRPCServer) Ping(s string, ack *bool) error {
-	fmt.Println("I've been pinged by: ", s)
+func (bs *BrokerRPCServer) Ping(message *m.Message, ack *bool) error {
+	
+	fmt.Println("I've been pinged by: ", message.Text)
+	for ;;{
+	}
 	*ack = true
 	return nil
 }
