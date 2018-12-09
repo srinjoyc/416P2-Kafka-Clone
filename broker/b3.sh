@@ -1,1 +1,1 @@
-go run broker.go b3.json
+go run *.go b3.json

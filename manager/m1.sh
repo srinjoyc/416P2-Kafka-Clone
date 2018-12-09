@@ -1,1 +1,1 @@
-go run manager.go m1.json
+go run *.go m1.json

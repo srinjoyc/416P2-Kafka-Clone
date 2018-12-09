@@ -1,6 +1,10 @@
 package message
 
-import "time"
+import (
+	"strconv"
+	"time"
+	"crypto/sha1"
+)
 
 type OPCODE uint
 
@@ -17,6 +21,7 @@ const (
 	PROMOTE
 	MANAGER_SYNC
 	MANAGER_PUSH
+	MANAGER_RESPONSE_TO_PROVIDER
 )
 
 const (
@@ -35,5 +40,30 @@ type Message struct {
 	Topic     string
 	Partition uint8
 	Role      ROLE
+	Proposer  string
+	IPs []string
 	Timestamp time.Time
+}
+
+func (m *Message) Hash() [sha1.Size]byte{
+	var buf []byte
+
+	buf = append(buf, []byte(m.ID)...)
+	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Type), 10))...)
+	buf = append(buf, []byte(m.Text)...)
+	buf = append(buf, []byte(m.Topic)...)
+	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Partition), 10))...)
+	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Role), 10))...)
+	buf = append(buf, []byte(m.Proposer)...)
+
+	for _, ip := range m.IPs{
+		buf = append(buf, []byte(ip)...)
+	}
+
+	timeByte, _ := m.Timestamp.MarshalText()
+	buf = append(buf, timeByte...)
+
+
+
+	return sha1.Sum(buf)
 }

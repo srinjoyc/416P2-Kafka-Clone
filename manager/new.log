@@ -2,9 +2,15 @@
 
 m1 {"m1":1}
 Initialization Complete
-m1 {"m2":2, "m1":2}
+m1 {"m1":2, "m2":2}
 Received RPC request
 m1 {"m1":3, "m2":2}
+Sending response to RPC request
+m1 {"m1":4, "m2":2, "m4":2}
+Received RPC request
+m1 {"m1":5, "m2":2, "m4":2}
+Making RPC call
+m1 {"m1":6, "m2":2, "m4":2}
 Sending response to RPC request
 m2 {"m2":1}
 Initialization Complete
@@ -12,15 +18,11 @@ m2 {"m2":2}
 Making RPC call
 m2 {"m2":3, "m1":3}
 Received RPC Call response from server
-m3 {"m3":1}
-Initialization Complete
-m3 {"m3":2}
-Making RPC call
-m3 {"m1":11, "m2":9, "m3":3}
-Received RPC Call response from server
+m2 {"m1":5, "m4":2, "m2":4}
+Received RPC request
 m4 {"m4":1}
 Initialization Complete
 m4 {"m4":2}
 Making RPC call
-m4 {"m4":3, "m1":7, "m2":5}
+m4 {"m4":3, "m1":6, "m2":2}
 Received RPC Call response from server

@@ -25,9 +25,9 @@ func ReadFileByte(filePath string) []byte {
 // Sendfile: Zero copy
 // Sendfile sends count bytes from f to remote a TCP connection.
 // f offset is always relative to the current offset.
-func Sendfile(conn *net.TCPConn, filename string, start int64, length int64) (n int64, err error) {
+func Sendfile(conn *net.TCPConn, filename string, startOffset int64, length int64) (n int64, err error) {
 	f, err := os.Open(filename)
-	f.Seek(start, 0)
+	f.Seek(startOffset, 0)
 	lr := &io.LimitedReader{N: length, R: f}
 	n, err = conn.ReadFrom(lr)
 	return
