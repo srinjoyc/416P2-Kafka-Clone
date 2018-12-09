@@ -1,8 +1,6 @@
 package message
 
-import (
-	"time"
-)
+import "time"
 
 type OPCODE uint
 

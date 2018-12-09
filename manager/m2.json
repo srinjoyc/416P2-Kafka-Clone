@@ -1,5 +1,6 @@
 {
-    "ManagerNodeID": "m1",
+    "ManagerNodeID": "m2",
     "ManagerIP": "127.0.0.1:9081",
-    "PeerManagerNodeIP": ["127.0.0.1:9080", "127.0.0.1:9082"]
+    "PeerManagerNodeIP": ["127.0.0.1:9080"],
+    "BACKUP": false
 }

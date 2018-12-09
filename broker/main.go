@@ -1,26 +1,27 @@
 package main
 
 import (
-	"bufio"
-	"encoding/gob"
+	"net"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
-	"net"
 	"os"
 
-	"../lib/message"
+	m"../lib/message"
+	"github.com/DistributedClocks/GoVector/govec"
+	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
 type configSetting struct {
 	BrokerNodeID      string
-	BrokerIPPort      string
-	ManagerIPPorts    []string
-	PeerBrokerIPPorts []string
+	BrokerIP          string
+	ManagerIPs    []string
 }
 
 var config configSetting
+
+var logger *govec.GoLog
+var loggerOptions govec.GoLogOptions
 
 /* readConfigJSON
  * Desc:
@@ -43,57 +44,58 @@ func readConfigJSON(configFile string) error {
 	return nil
 }
 
-/* sendMessage
- * para message string
- *
- * Desc:
- * 		send the message to kafka node by remoteIPPort
- */
-func sendMessage(remoteIPPort string, msg message.Message) error {
-	conn, err := net.Dial("tcp", remoteIPPort)
-	if err != nil {
-		println("Fail to connect kafka manager" + remoteIPPort)
-		return err
-	}
-	defer conn.Close()
-
-	// send message
-	enc := gob.NewEncoder(conn)
-	err = enc.Encode(msg)
-	if err != nil {
-		log.Fatal("encode error:", err)
-	}
-
-	// response
-	dec := gob.NewDecoder(conn)
-	response := &Message{}
-	dec.Decode(response)
-	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Payload.Marshall())
-
-	return nil
-}
-
-func informManager() {
-	m := message.Message{ID: config.BrokerNodeID, Type: message.NEW_BROKER, Text: config.BrokerIPPort}
-	for i := 0; i < len(config.ManagerIPs); i++ {
-		sendMessage(config.ManagerIPs[i], m)
-	}
-}
-
 // Initialize starts the node as a broker node in the network
+
 func Initialize() error {
 	configFilename := os.Args[1]
+
 	if err := readConfigJSON(configFilename); err != nil {
 		return err
 	}
 
-	fmt.Println(config.BrokerIPPort)
-	informManager() // when a new broker starts, it will inform the manager nodes
+	logger = govec.InitGoVector(config.BrokerNodeID, fmt.Sprintf("%v-logfile", config.BrokerNodeID), govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+
+
+	fmt.Println(config.BrokerIP)
 
 	return nil
 }
 
+func registerBrokerWithManager() error{
+
+	fmt.Println(config.ManagerIPs)
+
+	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIPs[0])
+
+	if err != nil {
+		return err
+	}
+
+	rpcClient, err := vrpc.RPCDial("tcp", managerAddr.String(), logger, loggerOptions)
+	defer rpcClient.Close()
+	if err != nil {
+		return err
+	}
+
+	message := m.Message{
+		ID: config.BrokerNodeID,
+		Text: config.BrokerIP,
+	}
+
+	var ack bool
+
+	if err:=rpcClient.Call("ManagerRPCServer.RegisterBroker", message, &ack); err!=nil{
+		return err
+	}
+
+	return nil
+	
+}
+
+
 func main() {
+
 	if len(os.Args) != 2 {
 		fmt.Println("Please provide config filename. e.g. b1.json, b2.json")
 		return
@@ -102,16 +104,8 @@ func main() {
 	err := Initialize()
 	checkError(err)
 
-	err = InitBroker(config.BrokerIPPort)
+	err = InitBroker(config.BrokerIP)
 	checkError(err)
-
-	// terminal controller like shell
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		text, _ := reader.ReadString('\n')
-		println(text)
-	}
 }
 
 func checkError(err error) {
