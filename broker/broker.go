@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/rpc"
 	"os"
-	"strings"
 	"sync"
 
 	m "../lib/message"
@@ -218,7 +217,7 @@ func (bs *BrokerRPCServer) StartLeader(message *m.Message, ack *bool) error {
 		return nil
 	}
 
-	followersIP := strings.Split(message.Text, ",")
+	followersIP := message.IPs
 
 	followerMessage := &m.Message{Topic: message.Topic, Partition: message.Partition}
 
@@ -270,9 +269,9 @@ func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) err
 }
 
 func (bs *BrokerRPCServer) Ping(message *m.Message, ack *bool) error {
-	
+
 	fmt.Println("I've been pinged by: ", message.Text)
-	for ;;{
+	for {
 	}
 	*ack = true
 	return nil

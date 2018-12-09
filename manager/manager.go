@@ -31,9 +31,9 @@ type ManagerRPCServer int
 
 type ManagerNode struct {
 	ManagerNodeID ManagerNodeID
+	ManagerPeers  map[ManagerNodeID]net.Addr
 	ManagerIP     net.Addr
 	TopicMap      map[TopicID]Topic
-	ManagerPeers  map[ManagerNodeID]net.Addr
 	BrokerNodes   map[BrokerID]net.Addr
 	BrokerNodesIP []string
 	TopicMutex    *sync.Mutex
@@ -51,8 +51,8 @@ type ManagerNodeID string
 type Topic []*Partition
 
 type Partition struct {
-	LeaderIP    net.Addr
-	FollowerIPs []net.Addr
+	LeaderIP    string
+	FollowerIPs []string
 }
 
 type configSetting struct {
@@ -614,7 +614,14 @@ func (m *ManagerRPCServer) CreateNewTopic(request *message.Message, response *me
 	} else {
 		response.IPs = getHashingNodes(request.Topic, int(request.Partition))
 		response.Ack = true
+
+		topicGroup := Partition{LeaderIP: response.IPs[0], FollowerIPs: response.IPs[1:]}
+		manager.TopicMutex.Lock()
+		manager.TopicMap[TopicID(request.Topic)] = append(manager.TopicMap[TopicID(request.Topic)], &topicGroup)
+		manager.TopicMutex.Unlock()
 	}
+
+	printTopicMap()
 
 	return nil
 }
@@ -629,6 +636,18 @@ func getHashingNodes(key string, replicaCount int) []string {
 	server, _ := ring.GetNodes(key, replicaCount)
 
 	return server
+}
+
+func printTopicMap() {
+	println("------------")
+	for key, value := range manager.TopicMap {
+		println("topic:", key)
+		for _, v := range value {
+			println("LeaderIP:", v.LeaderIP)
+			fmt.Printf("%v\n", v.FollowerIPs)
+		}
+	}
+	println("------------")
 }
 
 func shell() {
@@ -650,6 +669,8 @@ func shell() {
 			fmt.Scanf("%d", &n)
 			server := getHashingNodes(v, n)
 			fmt.Printf("%v\n", server)
+		} else if cmd == "topicmap\n" {
+
 		}
 	}
 }
