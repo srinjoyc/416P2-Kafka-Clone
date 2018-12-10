@@ -253,7 +253,6 @@ func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 		return err
 	}
 
-<<<<<<< Updated upstream
 	*ack = true
 	return nil
 }
@@ -265,26 +264,10 @@ func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, ack *bool) error{
 		return err
 	}
 	
-=======
->>>>>>> Stashed changes
 	*ack = true
 	return nil
 }
 
-<<<<<<< Updated upstream
-=======
-func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, ack *bool) error{
-	*ack = false
-
-	if err := mrpc.threePC("AddBroker", msg, manager.ManagerPeers); err != nil {
-		return err
-	}
-	
-	*ack = true
-	return nil
-}
-
->>>>>>> Stashed changes
 
 
 func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) error {
