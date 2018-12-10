@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"time"
 
 	m "../lib/message"
 	"github.com/DistributedClocks/GoVector/govec"
@@ -83,13 +84,14 @@ func registerBrokerWithManager() error {
 	}
 
 	message := m.Message{
-		ID:   config.BrokerNodeID,
-		Text: config.BrokerIP,
+		ID:        config.BrokerNodeID,
+		Text:      config.BrokerIP,
+		Timestamp: time.Now(),
 	}
 
 	var ack bool
 
-	if err := rpcClient.Call("ManagerRPCServer.RegisterBroker", message, &ack); err != nil {
+	if err := rpcClient.Call("ManagerRPCServer.AddBroker", message, &ack); err != nil {
 		return err
 	}
 

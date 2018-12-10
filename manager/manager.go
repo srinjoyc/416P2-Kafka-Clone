@@ -11,12 +11,10 @@ import (
 	"os"
 	"reflect"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
-
 	m "../lib/message"
 	"github.com/serialx/hashring"
 
@@ -38,6 +36,7 @@ type ConnectionErr struct {
 
 type TransactionErr struct {
 	Err error
+	Msg string
 }
 
 type RPCTimedout struct {
@@ -52,7 +51,6 @@ type ManagerNode struct {
 	ManagerIP        net.Addr
 	TopicMap         map[TopicID]Topic
 	BrokerNodes      map[BrokerID]net.Addr
-	BrokerNodesIP    []string
 	TopicMutex       *sync.Mutex
 	ManagerMutex     *sync.Mutex
 	BrokerMutex      *sync.Mutex
@@ -64,6 +62,7 @@ type State uint
 const (
 	READY State = iota
 	WAIT
+	APPROVE
 	PREPARE
 	COMMIT
 	ABORT
@@ -96,270 +95,7 @@ var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
 var ring *hashring.HashRing
 
-//----------------------------------------------------------------------------------------------------------------------------------------------
-
-// manager keeps track of all free nodes (i.e. nodes that are ready to be 'provisioned'.
-// If this manager goes down, it will need to ensure that the other managers
-// have the correct copy of this set.
-// Initialize this set to a bunch of free nodes on manager startup, probably via a json config.
-// var freeNodes = freeNodesSet{
-// 	set: make(map[string]bool),
-// }
-
-// var channelMap = make(map[string]map[uint8]channel)
-
-// // just to help unpack maps from other nodes
-// type backupMap struct {
-// 	backup map[string]map[uint8]channel
-// 	msg    string
-// }
-// type channel struct {
-// 	topicName   string
-// 	partition   uint8
-// 	leaderIP    string
-// 	followerIPs string
-// 	available   bool
-// }
-
-//var topicMap =
-// freeNodesSet contains a set of nodes for the entire topology.
-// if set[nodeIP] == true,  node is free
-// if set[nodeIP] == false, node is busy
-//
-// Operations on freeNodesSet are atomic.
-// type freeNodesSet struct {
-// 	set   map[string]bool
-// 	mutex sync.Mutex
-// }
-
-// getFreeNodes returns a slice of free nodes with length num
-// If the amount of available free nodes is < num,
-// return an InsufficientFreeNodes error.
-// Once these nodes are returned to caller, there are marked as busy to avoid concurrency issues.
-// If the caller gets free nodes using this function, and then decides not to use them, it must
-// manually de-allocate each node by calling setNodeAsFree.
-
-// TODO: Make this DHT instead of first seen first provisioned.
-// func (s *freeNodesSet) getFreeNodes(num int) ([]string, error) {
-// 	s.mutex.Lock()
-// 	defer s.mutex.Unlock()
-
-// 	var nodes []string
-// 	var full bool
-// 	for ip, free := range s.set {
-// 		if free {
-// 			nodes = append(nodes, ip)
-// 			s.set[ip] = false
-// 		}
-
-// 		if len(nodes) == num {
-// 			full = true
-// 			break
-// 		}
-// 	}
-
-// 	if full {
-// 		return nodes, nil
-// 	} else {
-// 		return nil, ErrInsufficientFreeNodes
-// 	}
-// }
-
-// func (s *freeNodesSet) isFree(ip string) bool {
-// 	s.mutex.Lock()
-// 	defer s.mutex.Unlock()
-// 	if free, ok := s.set[ip]; ok {
-// 		return free
-// 	}
-// 	// If we asked for an ip thats not even in the registered set of nodes,
-// 	// just return false as if node is busy.
-// 	return false
-// }
-
-// func (s *freeNodesSet) setNodeAsFree(ip string) {
-// 	s.mutex.Lock()
-// 	defer s.mutex.Unlock()
-// 	if _, ok := s.set[ip]; ok {
-// 		s.set[ip] = true
-// 	}
-// 	// No-op if ip is not in registered set.
-// }
-
-// func (s *freeNodesSet) setNodeAsBusy(ip string) {
-// 	s.mutex.Lock()
-// 	defer s.mutex.Unlock()
-// 	if _, ok := s.set[ip]; ok {
-// 		s.set[ip] = false
-// 	}
-// 	// No-op if ip is not in registered set.
-// }
-
-// func (s *freeNodesSet) addFreeNode(ip string) {
-// 	s.mutex.Lock()
-// 	defer s.mutex.Unlock()
-// 	if _, ok := s.set[ip]; !ok {
-// 		// Only add this free node if its not already in the set of free nodes.
-// 		s.set[ip] = true
-// 	}
-// 	// If ip is already in the set, no-op.
-// }
-
-/* listenManagers()
- * Desc:
- * 		this is a goroutine dealing with other manger nodes
- *
- * @para IPPort [string]:
- *		The list of neighbouring managers
- */
-// func listenForMessages() error {
-// 	listener, err := net.Listen("tcp", config.ManagerIP)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return err
-// 	}
-// 	defer listener.Close()
-
-// 	fmt.Println("Listening to other managers at :" + config.ManagerIP)
-
-// 	for {
-// 		conn, err := listener.Accept()
-// 		if err != nil {
-// 			fmt.Println(err)
-// 			return err
-// 		}
-
-// 		go processMessage(conn)
-// 	}
-// }
-
-/* dealManager
- * @para conn:
- *		the ip and port opened for messages from provider routine
- *
- * Desc: Handles all messages from other managers
- *
- */
-
-// func processMessage(conn net.Conn) {
-// 	// check if msg is from other manager
-// 	senderIP := conn.RemoteAddr().String()
-// 	// first handle cases if this is the manager backup
-// 	// THIS variable can be turned off through a special manager msg
-// 	// decode the serialized message from the connection
-
-// 	// decode the infomation into initialized message
-// 	// if-else branch to deal with different types of messages
-
-// 	// NETWORK INFO MSG (RANDOM/TESTING)
-// 	} else if msg.Type == message.NEW_TOPIC {
-// 		fmt.Printf("Receive Provider Msg: {pID:%s, type:%s, topic:%s}\n", msg.ID, msg.Type, msg.Topic)
-// 		// get free nodes (chose based on algo)
-// 		clusterNodes, err := freeNodes.getFreeNodes(1)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 		followerIPs := ""
-// 		// contact each node to set their role
-// 		for idx, ip := range clusterNodes {
-// 			fmt.Println(ip)
-// 			if idx == 0 {
-// 				continue
-// 			} else {
-// 				followerIPs += ip
-// 			}
-// 		}
-// 		startBrokerMsg := message.Message{ID: config.ManagerIP, Type: message.START_LEADER, Text: followerIPs, Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
-// 		fmt.Println(startBrokerMsg)
-// 		enc := gob.NewEncoder(conn)
-// 		err = enc.Encode(startBrokerMsg)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 		if channelMap[msg.Topic] == nil {
-// 			channelMap[msg.Topic] = make(map[uint8]channel)
-// 		}
-// 		channelMap[msg.Topic][msg.Partition] = channel{msg.Topic, msg.Partition, clusterNodes[0], followerIPs, true}
-
-// 		// REQUEST TO FIND THE LEADER OF A TOPIC/PARTITION COMBO
-// 	} else if msg.Type == message.GET_LEADER {
-// 		leaderIP := channelMap[msg.Topic][msg.Partition].leaderIP
-// 		providerMsg := message.Message{ID: config.ManagerIP, Type: message.GET_LEADER, Text: leaderIP, Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
-// 		enc := gob.NewEncoder(conn)
-// 		err := enc.Encode(providerMsg)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-
-// 		// GETS A FAILURE FROM ANOTHER NODE
-// 	} else if msg.Type == message.FOLLOWER_NODE_DOWN {
-// 		followerIP := msg.Text
-// 		affectedChannel := channelMap[msg.Topic][msg.Partition]
-// 		affectedChannel.followerIPs = removeIPFromStringList(followerIP, affectedChannel.followerIPs)
-// 		newFollower, err := freeNodes.getFreeNodes(1)
-// 		affectedChannel.followerIPs += newFollower[0] + ";"
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 		leaderMsg := message.Message{ID: config.ManagerIP, Type: message.FOLLOWER_NODE_DOWN, Text: newFollower[0], Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
-// 		enc := gob.NewEncoder(conn)
-// 		err = enc.Encode(leaderMsg)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 		// LEADER HAS FAILED
-// 	} else if msg.Type == message.LEADER_NODE_DOWN {
-// 		leaderIP := msg.Text
-// 		promotedNodeIP := ""
-// 		affectedChannel := channel{}
-// 		for _, partition := range channelMap {
-// 			for _, channel := range partition {
-// 				if channel.leaderIP == leaderIP {
-// 					affectedChannel = channel
-// 					promotedNodeIP = strings.Split(channel.followerIPs, ";")[0]
-// 					channel.leaderIP = promotedNodeIP
-// 					channel.followerIPs = removeIPFromStringList(promotedNodeIP, channel.followerIPs)
-// 				}
-// 			}
-// 		}
-// 		newFollower, err := freeNodes.getFreeNodes(1)
-// 		affectedChannel.followerIPs += newFollower[0] + ";"
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 		promoteMsg := message.Message{ID: config.ManagerIP, Type: message.PROMOTE, Text: newFollower[0], Topic: msg.Topic, Role: message.LEADER, Partition: msg.Partition, Timestamp: time.Now()}
-// 		enc := gob.NewEncoder(conn)
-// 		err = enc.Encode(promoteMsg)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 	} else if msg.Type == message.MANAGER_SYNC {
-// 		enc := gob.NewEncoder(conn)
-// 		sendBackup := &backupMap{backup: channelMap, msg: "normal"}
-// 		err := enc.Encode(sendBackup)
-// 		if err != nil {
-// 			fmt.Println(err)
-// 		}
-// 	}
-
-// 	conn.Close()
-// }
-
-// removes an ip from an ip list seperated by ';'
-func removeIPFromStringList(removeIP string, ipList string) (newIPList string) {
-	s := strings.Split(ipList, ";")
-	for _, ip := range s {
-		if ip == removeIP {
-			continue
-		} else if ip != "" {
-			newIPList += ip + ";"
-		}
-	}
-	return newIPList
-}
-
 //-------------------------------------------------------------------------------------------------------------------------------
-
-var tempManagerID ManagerNodeID
 
 /* readConfigJSON
  * Desc:
@@ -420,27 +156,13 @@ func Initialize(configFileName string) error {
 		}
 	}
 
-	// for i, v := range config.PeerManagerNodeIP {
-	// 	fmt.Println(len(config.PeerManagerNodeIP))
-	// 	fmt.Println("idx", i, v)
-	// }
-
-	// for _, mPeer := range config.PeerManagerNodeIP {
-	// 	if err := manager.addManagerPeerRPC(mPeer); err != nil {
-	// 		//TODO ignore error for now
-	// 		fmt.Printf("Failed to connect to Manager Peer - %v: %v\n", mPeer, err)
-	// 		continue
-	// 	}
-	// }
-
 	var emptylist []string
 	ring = hashring.New(emptylist)
 
 	spawnRPCServer()
 	return nil
-
-	// listenForMessages()
 }
+
 
 func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	fmt.Println("registerPeerRequest")
@@ -467,11 +189,9 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 		Timestamp: time.Now(),
 	}
 
-	fmt.Println("Ready to invoke service")
 	if err := rpcClient.Call("ManagerRPCServer.RegisterPeer", newMsg, &peerList); err != nil {
 		return err
 	}
-	fmt.Println("Done Invoking")
 
 	manager.ManagerMutex.Lock()
 	for k, v := range peerList {
@@ -495,50 +215,30 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	return nil
 }
 
+// -------------------------------------------------------------------------------------------------------------------------------------------------------
+
 func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]string) error {
 	if err := mrpc.threePC("RegisterPeer", msg, manager.ManagerPeers); err != nil {
-		switch err.(type) {
-		case *TransactionErr:
-			e := err.(*TransactionErr)
-			switch (e.Err).(type) {
-			case *ConnectionErr:
-				fmt.Println("attempt to retry by delteig peer")
-				ce := (e.Err).(*ConnectionErr)
-
-				deleteMsg := m.Message{
-					ID:        string(ce.NodeID),
-					Text:      ce.Addr.String(),
-					Proposer:  string(manager.ManagerNodeID),
-					Timestamp: time.Now(),
-				}
-				var ack bool
-				if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
-					return err
-				}
-				fmt.Println("Failed: ", ack)
-				fmt.Println("Addr Failed: ", ce.NodeID, ce.Addr)
-			}
-			return err
-		default:
-			fmt.Println("default Error")
-			return err
-		}
+		return nil
 	}
+
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
 		(*peerList)[string(k)] = v.String()
 	}
 	manager.ManagerMutex.Unlock()
 	(*peerList)[string(manager.ManagerNodeID)] = manager.ManagerIP.String()
+
 	return nil
 }
+
 
 func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 	*ack = false
 
 	delPeerID := ManagerNodeID(msg.ID)
 
-	var newPeerAddr map[ManagerNodeID]net.Addr
+	var newPeerAddr  = map[ManagerNodeID]net.Addr{}
 
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
@@ -552,16 +252,80 @@ func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 	if err := mrpc.threePC("DeletePeer", msg, newPeerAddr); err != nil {
 		return err
 	}
+
+<<<<<<< Updated upstream
 	*ack = true
 	return nil
 }
 
+func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, ack *bool) error{
+	*ack = false
+
+	if err := mrpc.threePC("AddBroker", msg, manager.ManagerPeers); err != nil {
+		return err
+	}
+	
+=======
+>>>>>>> Stashed changes
+	*ack = true
+	return nil
+}
+
+<<<<<<< Updated upstream
+=======
+func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, ack *bool) error{
+	*ack = false
+
+	if err := mrpc.threePC("AddBroker", msg, manager.ManagerPeers); err != nil {
+		return err
+	}
+	
+	*ack = true
+	return nil
+}
+
+>>>>>>> Stashed changes
+
+
 func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) error {
 	// canCommitPhase
 	peerTransactionState, err := mrpc.canCommit(serviceMethod, msg, peerAddrs)
+
 	if err != nil {
-		return err
+		fmt.Println("Can commit Err: ", err)
+		switch err.(type) {
+		case *TransactionErr:
+			e := err.(*TransactionErr)
+			switch (e.Err).(type) {
+			case *ConnectionErr:
+				fmt.Println("attempt to retry by delete peer")
+				
+				ce := (e.Err).(*ConnectionErr)
+				deleteMsg := m.Message{
+					ID:        string(ce.NodeID),
+					Text:      ce.Addr.String(),
+					Proposer:  string(manager.ManagerNodeID),
+					Timestamp: time.Now(),
+				}
+				var ack bool
+				if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+					return fmt.Errorf("delete node failed: %v", err)
+				}
+
+				if ack {
+					if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+						return fmt.Errorf("retry failed: %v", err)
+					}
+				}
+
+			}
+		default:
+			fmt.Println("default Error")
+			return err
+		}
+		return nil
 	}
+
 	// recovery if needed
 	if peerTransactionState != nil {
 		var recoverPeerAddr map[ManagerNodeID]net.Addr
@@ -579,11 +343,72 @@ func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peer
 	}
 	// preCommitPhase
 	if err := mrpc.preCommit(msg, peerAddrs); err != nil {
-		return err
+		switch err.(type) {
+		case *TransactionErr:
+			e := err.(*TransactionErr)
+			switch (e.Err).(type) {
+			case *ConnectionErr:
+				fmt.Println("attempt to retry by delete peer")
+				ce := (e.Err).(*ConnectionErr)
+
+				deleteMsg := m.Message{
+					ID:        string(ce.NodeID),
+					Text:      ce.Addr.String(),
+					Proposer:  string(manager.ManagerNodeID),
+					Timestamp: time.Now(),
+				}
+
+				var ack bool
+				if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+					return fmt.Errorf("delete node failed: %v", err)
+				}
+
+				if ack {
+					fmt.Println(manager.ManagerPeers)
+					if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+						return fmt.Errorf("retry failed: %v", err)
+					}
+				}
+			}
+		default:
+			fmt.Println("default Error")
+			return err
+		}
+		return nil
 	}
+
 	// commitPhase
 	if err := mrpc.commit(serviceMethod, msg, peerAddrs); err != nil {
-		return err
+				switch err.(type) {
+		case *TransactionErr:
+			e := err.(*TransactionErr)
+			switch (e.Err).(type) {
+			case *ConnectionErr:
+				fmt.Println("attempt to retry by delete peer")
+				ce := (e.Err).(*ConnectionErr)
+				deleteMsg := m.Message{
+					ID:        string(ce.NodeID),
+					Text:      ce.Addr.String(),
+					Proposer:  string(manager.ManagerNodeID),
+					Timestamp: time.Now(),
+				}
+				var ack bool
+				if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+					return fmt.Errorf("delete node failed: %v", err)
+				}
+
+				if ack {
+					fmt.Println(manager.ManagerPeers)
+					if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+						return fmt.Errorf("retry failed: %v", err)
+					}
+				}
+			}
+		default:
+			fmt.Println("default Error")
+			return err
+		}
+		return nil
 	}
 	return nil
 }
@@ -657,7 +482,6 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	peerTransactionState := make(map[ManagerNodeID]State)
 
 	for managerID, managerPeer := range peerAddrs {
-		fmt.Println("Peer addr: ", managerPeer.String())
 		wg.Add(1)
 		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
 			// Prevent Closure
@@ -681,20 +505,21 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 			peerTransactionState[managerID] = s
 		}(managerID, managerPeer)
 	}
-	fmt.Println("Break2")
+
 	manager.TransactionCache.Add(msg.Hash(), WAIT)
+
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
 		wg.Wait()
 	}()
-	fmt.Println("Break3")
+
 	select {
 	case err := <-errorCh:
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
 		manager.ManagerMutex.Unlock()
 		fmt.Println("Abort Transaction")
-		return nil, NewTransactionErr(err)
+		return nil, NewTransactionErr(err, "canCommit")
 	case <-c:
 		fmt.Println("CanCommitPhase Done")
 	}
@@ -749,6 +574,9 @@ func (mrpc *ManagerRPCServer) preCommit(msg *m.Message, peerAddrs map[ManagerNod
 			}
 		}(managerID, managerPeer)
 	}
+
+	manager.TransactionCache.Add(msg.Hash(), PREPARE)
+
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
@@ -757,10 +585,11 @@ func (mrpc *ManagerRPCServer) preCommit(msg *m.Message, peerAddrs map[ManagerNod
 	select {
 	case err := <-errorCh:
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return NewTransactionErr(err)
+		return NewTransactionErr(err, "preCommit")
 	case <-c:
 		fmt.Println("PreCommit Phase Done")
 	}
+
 	return nil
 }
 
@@ -804,7 +633,7 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerA
 	select {
 	case err := <-errorCh:
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return NewTransactionErr(err)
+		return NewTransactionErr(err, "commit")
 	case <-c:
 		fmt.Println("Commit Phase Done")
 	}
@@ -829,14 +658,13 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerA
 //-----------------------------------------------------------------------------------------------------------------------------
 
 func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
-	fmt.Println("CanCommitRPC")
+	
 	v, exist := manager.TransactionCache.Get(msg.Hash())
 	if exist {
 		s, ok := v.(State)
 		if !ok {
 			return fmt.Errorf("Couldn't typecast interface value: %v to State", s)
 		}
-
 		if s == COMMIT {
 			fmt.Println("transaction has been committed, return existing state: ", s)
 			*state = s
@@ -855,7 +683,7 @@ func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 	// 	return nil
 	// }
 
-	manager.TransactionCache.Add(msg.Hash(), PREPARE)
+	manager.TransactionCache.Add(msg.Hash(), APPROVE)
 	println("CanCommitRPC prepare")
 	*state = PREPARE
 	return nil
@@ -912,6 +740,31 @@ func (mrpc *ManagerRPCServer) CommitDeletePeerRPC(msg *m.Message, ack *bool) err
 
 	fmt.Printf("Delete Peer - %v - %v\n", peerManagerID, peerManagerAddr)
 	fmt.Println("Peer Map: ", manager.ManagerPeers)
+
+	manager.TransactionCache.Add(msg.Hash(), COMMIT)
+	*ack = true
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) CommitAddBrokerRPC(msg *m.Message, ack *bool) error {
+	*ack = false
+	brokerID := BrokerID(msg.ID)
+	brokerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+
+	fmt.Println(brokerID, brokerAddr)
+
+	if err != nil {
+		return err
+	}
+
+	manager.BrokerMutex.Lock()
+	manager.BrokerNodes[brokerID] = brokerAddr
+	manager.BrokerMutex.Unlock()
+
+	// ring = ring.AddNode(peerManagerAddr.String())
+
+	fmt.Printf("Added Broker - %v - %v\n", brokerID, brokerAddr)
+	fmt.Println("Broker Map: ", manager.BrokerNodes)
 
 	manager.TransactionCache.Add(msg.Hash(), COMMIT)
 	*ack = true
@@ -1009,59 +862,6 @@ func (mrpc *ManagerRPCServer) Ack(addr string, ack *bool) error {
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) (err error) {
-	*ack = false
-
-	fmt.Println(msg.Text)
-	fmt.Println(msg.ID)
-
-	rAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
-	defer func() {
-		if p := recover(); p != nil {
-			err = NewConnectionErr(ManagerNodeID("unkown"), rAddr, fmt.Errorf("%v", p))
-		}
-	}()
-	if err != nil {
-		return err
-	}
-	newMsg := m.Message{
-		Text: manager.ManagerIP.String(),
-	}
-	rpcClient, err := vrpc.RPCDial("tcp", rAddr.String(), logger, loggerOptions)
-
-	// defer rpcClient.Close()
-	// if err != nil {
-	// 	return err
-	// }
-	fmt.Println("Ready to Ping")
-
-	c := make(chan error, 1)
-	go func() { c <- rpcClient.Call("BrokerRPCServer.Ping", newMsg, &ack) }()
-
-	select {
-	case err := <-c:
-
-		if err != nil {
-			return nil
-		}
-		// use err and reply
-	case <-time.After(time.Duration(3) * time.Second):
-		// call timed out
-	}
-
-	fmt.Println("Done Ping")
-
-	// add the broker informtaion into list
-	// manager.addBroker(BrokerID(m.ID), rAddr)
-
-	fmt.Println("Calling three pc to add broker")
-	fmt.Println("Current Peers: ", manager.ManagerPeers)
-	if err := mrpc.threePC("RegistBroker", msg, manager.ManagerPeers); err != nil {
-		return err
-	}
-
-	return nil
-}
 
 func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Message) error {
 	println(request.Topic)
@@ -1202,6 +1002,9 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 	return nil
 }
 
+
+
+
 func NewConnectionErr(nodeID ManagerNodeID, addr net.Addr, err error) *ConnectionErr {
 	return &ConnectionErr{
 		Addr:   addr,
@@ -1210,18 +1013,19 @@ func NewConnectionErr(nodeID ManagerNodeID, addr net.Addr, err error) *Connectio
 	}
 }
 
-func NewTransactionErr(err error) *TransactionErr {
+func (e *ConnectionErr) Error() string {
+	return fmt.Sprintf("bad connection - %v - %v: %v", e.NodeID, e.Addr.String(), e.Err)
+}
+
+func NewTransactionErr(err error, msg string) *TransactionErr {
 	return &TransactionErr{
 		Err: err,
+		Msg: msg,
 	}
 }
 
 func (e *TransactionErr) Error() string {
-	return fmt.Sprintf("transaction aborted: %v", e.Err)
-}
-
-func (e *ConnectionErr) Error() string {
-	return fmt.Sprintf("bad connection - %v - %v: %v", e.NodeID, e.Addr.String(), e.Err)
+	return fmt.Sprintf("%v: transaction aborted: %v", e.Msg, e.Err)
 }
 
 func NewRPCTimedout(serviceMethod string) *RPCTimedout {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"time"
 	"fmt"
 	"log"
 	"net"
@@ -20,7 +21,10 @@ type Status int
 
 type consumerId string
 
-type record [512]byte
+type record struct{
+	data  [512]byte
+	timestamp time.Time
+}
 
 type partition []*record
 
