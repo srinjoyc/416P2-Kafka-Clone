@@ -30,6 +30,20 @@ import (
 // than are currently available
 var ErrInsufficientFreeNodes = errors.New("insufficient free nodes")
 
+type ConnectionErr struct {
+	Addr   net.Addr
+	NodeID ManagerNodeID
+	Err    error
+}
+
+type TransactionErr struct {
+	Err error
+}
+
+type RPCTimedout struct {
+	ServiceMethod string
+}
+
 type ManagerRPCServer int
 
 type ManagerNode struct {
@@ -374,15 +388,11 @@ func Initialize(configFileName string) error {
 	if err := readConfigJSON(configFileName); err != nil {
 		return fmt.Errorf("initialize error: %v", err)
 	}
-
 	println("Manager", config.ManagerIP, "starts")
-
 	managerIP, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
-
 	if err != nil {
 		return err
 	}
-
 	manager = &ManagerNode{
 		ManagerNodeID: ManagerNodeID(config.ManagerNodeID),
 		ManagerIP:     managerIP,
@@ -436,6 +446,11 @@ func Initialize(configFileName string) error {
 func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	fmt.Println("registerPeerRequest")
 	rAddr, err := net.ResolveTCPAddr("tcp", managerPeerAddr)
+	defer func() {
+		if p := recover(); p != nil {
+			err = NewConnectionErr(ManagerNodeID("PrimaryManger"), rAddr, fmt.Errorf("%v", p))
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -475,25 +490,41 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	manager.ManagerMutex.Unlock()
 
 	fmt.Println("Done RegisterPeerRequest")
-
 	fmt.Println("PrintPeerMap")
 	fmt.Println(manager.ManagerPeers)
 
 	return nil
 }
 
-
-
 func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]string) error {
-	fmt.Println("Calling three pc")
+	if err := mrpc.threePC("RegisterPeer", msg, manager.ManagerPeers); err != nil {
+		switch err.(type) {
+		case *TransactionErr:
+			e := err.(*TransactionErr)
+			switch (e.Err).(type) {
+			case *ConnectionErr:
+				fmt.Println("attempt to retry by delteig peer")
+				ce := (e.Err).(*ConnectionErr)
 
-	fmt.Println("Current Peers: ", manager.ManagerPeers)
-
-
-	if err := mrpc.threePC("RegisterPeer", msg); err != nil {
-		return err
+				deleteMsg := m.Message{
+					ID:        string(ce.NodeID),
+					Text:      ce.Addr.String(),
+					Proposer:  string(manager.ManagerNodeID),
+					Timestamp: time.Now(),
+				}
+				var ack bool
+				if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+					return err
+				}
+				fmt.Println("Failed: ", ack)
+				fmt.Println("Addr Failed: ", ce.NodeID, ce.Addr)
+			}
+			return err
+		default:
+			fmt.Println("default Error")
+			return err
+		}
 	}
-
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
 		(*peerList)[string(k)] = v.String()
@@ -503,61 +534,153 @@ func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]
 	return nil
 }
 
+func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
+	*ack = false
 
-func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message) error {
-	// canCommitPhase
-	if err := mrpc.canCommit(serviceMethod, msg); err != nil {
+	delPeerID := ManagerNodeID(msg.ID)
+
+	var newPeerAddr map[ManagerNodeID]net.Addr
+
+	manager.ManagerMutex.Lock()
+	for k, v := range manager.ManagerPeers {
+		if k == delPeerID {
+			continue
+		}
+		newPeerAddr[k] = v
+	}
+	manager.ManagerMutex.Unlock()
+
+	if err := mrpc.threePC("DeletePeer", msg, newPeerAddr); err != nil {
 		return err
 	}
+	*ack = true
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) error {
+	// canCommitPhase
+	peerTransactionState, err := mrpc.canCommit(serviceMethod, msg, peerAddrs)
+	if err != nil {
+		return err
+	}
+	// recovery if needed
+	if peerTransactionState != nil {
+		var recoverPeerAddr map[ManagerNodeID]net.Addr
+
+		for k, v := range *peerTransactionState {
+			if v == COMMIT {
+				recoverPeerAddr[k] = manager.ManagerPeers[k]
+			}
+		}
+
+		if err := mrpc.recoverPhase(serviceMethod, msg, recoverPeerAddr); err != nil {
+			return err
+		}
+		return nil
+	}
 	// preCommitPhase
-	if err := mrpc.preCommit(serviceMethod, msg); err != nil {
+	if err := mrpc.preCommit(msg, peerAddrs); err != nil {
 		return err
 	}
 	// commitPhase
-	if err := mrpc.commit(serviceMethod, msg); err != nil {
+	if err := mrpc.commit(serviceMethod, msg, peerAddrs); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message) error {
-	// canCommitPhase
-	fmt.Println("CanCommitPhase")
-	var wg sync.WaitGroup
+func (mrpc *ManagerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (err error) {
+	fmt.Println("Begin Recover")
 	errorCh := make(chan error, 1)
+	wg := sync.WaitGroup{}
 	manager.ManagerMutex.Lock()
-	fmt.Println("Break1")
-	for _, managerPeer := range manager.ManagerPeers {
-		fmt.Println("Peer addr: ", managerPeer.String())
+	for k, v := range peerAddrs {
+		if k == manager.ManagerNodeID {
+			continue
+		}
 		wg.Add(1)
-		go func(managerPeerAddr net.Addr) {
-			// Prevent Closure
+		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
 			defer func() {
 				if p := recover(); p != nil {
-					errorCh <- fmt.Errorf("bad connection - %v: %v", managerPeerAddr, p)
+					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
 			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
-				errorCh <- fmt.Errorf("manager peer - %v: %v", managerPeerAddr, err)
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
 			var ack bool
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommit%vRPC", serviceMethod), msg, &ack); err != nil {
-				errorCh <- fmt.Errorf("manager peer - %v: %v", managerPeerAddr, err)
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.Commit%vRPC", serviceMethod), msg, &ack); err != nil {
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
+		}(k, v)
+	}
+	manager.ManagerMutex.Unlock()
 
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case err := <-errorCh:
+		manager.TransactionCache.Add(msg.Hash(), ABORT)
+		return fmt.Errorf("recover aborted: %v", err)
+	case <-c:
+		fmt.Println("Commit Phase Done")
+	}
 
-			if !ack {
-				errorCh <- fmt.Errorf("peer - %v disagrees", managerPeerAddr)
+	if _, exists := peerAddrs[manager.ManagerNodeID]; exists {
+		// Local Commit
+		var ack bool
+
+		method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+		if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
+			manager.TransactionCache.Add(msg.Hash(), ABORT)
+			return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
+		}
+	}
+	fmt.Println("Done Recover")
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (*map[ManagerNodeID]State, error) {
+	// canCommitPhase
+	fmt.Println("CanCommitPhase")
+	var wg sync.WaitGroup
+	errorCh := make(chan error, 1)
+	manager.ManagerMutex.Lock()
+	fmt.Println("Break1")
+	peerTransactionState := make(map[ManagerNodeID]State)
+
+	for managerID, managerPeer := range peerAddrs {
+		fmt.Println("Peer addr: ", managerPeer.String())
+		wg.Add(1)
+		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+			// Prevent Closure
+			defer func() {
+				if p := recover(); p != nil {
+					errorCh <- NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
+				}
+			}()
+			defer wg.Done()
+			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			defer rpcClient.Close()
+			if err != nil {
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+				return
 			}
-
-			fmt.Println("Can commit response: ",managerPeerAddr, ack)
-
-		}(managerPeer)
+			var s State
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommitRPC"), msg, &s); err != nil {
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+				return
+			}
+			peerTransactionState[managerID] = s
+		}(managerID, managerPeer)
 	}
 	fmt.Println("Break2")
 	manager.TransactionCache.Add(msg.Hash(), WAIT)
@@ -572,95 +695,104 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message) er
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
 		manager.ManagerMutex.Unlock()
 		fmt.Println("Abort Transaction")
-		return fmt.Errorf("transaction aborted: %v", err)
+		return nil, NewTransactionErr(err)
 	case <-c:
 		fmt.Println("CanCommitPhase Done")
 	}
+
 	fmt.Println("Break4")
 	manager.ManagerMutex.Unlock()
 
 	// Local canCommit
-	var localAck = false
-	method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("CanCommit%vRPC", serviceMethod))
-	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&localAck)})[0].Interface(); err != nil {
+	var s State
+	method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("CanCommitRPC"))
+	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&s)})[0].Interface(); err != nil {
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
+		return nil, fmt.Errorf("coordinator failed: transaction aborted: %v", err)
 	}
-	if !localAck {
-		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return fmt.Errorf("transaction aborted: peerID exists in coordinator")
+	peerTransactionState[manager.ManagerNodeID] = s
+	for _, v := range peerTransactionState {
+		if v == COMMIT {
+			return &peerTransactionState, nil
+		}
 	}
-
-	return nil
+	fmt.Println("Peer Transaction Map", peerTransactionState)
+	return nil, nil
 }
 
-func (mrpc *ManagerRPCServer) preCommit(serviceMethod string, msg *m.Message) error {
+func (mrpc *ManagerRPCServer) preCommit(msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (err error) {
 	// preCommitPhase
 	fmt.Println("PreCommit Phase")
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
-
-	for _, managerPeer := range manager.ManagerPeers {
+	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
-		go func(managerPeerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+			defer func() {
+				if p := recover(); p != nil {
+					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
+				}
+			}()
 			defer wg.Done()
 			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
-				errorCh <- err
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
 			var ack bool
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.PreCommit%vRPC", serviceMethod), msg, &ack); err != nil {
-				errorCh <- err
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.PreCommitRPC"), msg, &ack); err != nil {
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
 			}
-		}(managerPeer)
+		}(managerID, managerPeer)
 	}
-
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
 		wg.Wait()
 	}()
-
 	select {
 	case err := <-errorCh:
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return fmt.Errorf("transaction aborted: %v", err)
+		return NewTransactionErr(err)
 	case <-c:
 		fmt.Println("PreCommit Phase Done")
 	}
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error {
+func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (err error) {
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
-	for _, managerPeer := range manager.ManagerPeers {
+	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
-		go func(managerPeerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+			defer func() {
+				if p := recover(); p != nil {
+					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
+				}
+			}()
 			defer wg.Done()
 			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
-				errorCh <- err
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
 			var ack bool
 			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.Commit%vRPC", serviceMethod), msg, &ack); err != nil {
-				errorCh <- err
+				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
-			
 
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
 			}
-		}(managerPeer)
+		}(managerID, managerPeer)
 
 	}
 
@@ -670,15 +802,13 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 		wg.Wait()
 	}()
 
-
 	select {
 	case err := <-errorCh:
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return fmt.Errorf("transaction aborted: %v", err)
+		return NewTransactionErr(err)
 	case <-c:
 		fmt.Println("Commit Phase Done")
 	}
-
 
 	// Local Commit
 	var ack bool
@@ -688,35 +818,49 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
 		return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
 	}
+
 	if !ack {
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return fmt.Errorf("transaction aborted: peerID exists in coordinator")
+		return fmt.Errorf("transaction aborted: transaction not commited")
 	}
+
 	return nil
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-func (mrpc *ManagerRPCServer) CanCommitRegisterPeerRPC(msg *m.Message, ack *bool) error {
+func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 	fmt.Println("CanCommitRegisterPeerRPC")
-	*ack = false
-	peerManagerID := ManagerNodeID(msg.ID)
+	v, exist := manager.TransactionCache.Get(msg.Hash())
+	if exist {
+		s, ok := v.(State)
+		if !ok {
+			return fmt.Errorf("Couldn't typecast interface value: %v to State", s)
+		}
 
-	manager.ManagerMutex.Lock()
-	defer manager.ManagerMutex.Unlock()
-
-	if _, exist := manager.ManagerPeers[peerManagerID]; exist {
-		fmt.Println("Manager", peerManagerID)
-		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return nil
+		if s == COMMIT {
+			fmt.Println("transaction has been committed, return existing state: ", s)
+			*state = s
+			return nil
+		}
 	}
+	// return err and set Transaction Cache as Abort on unwanted cases
 
-	*ack = true
-	manager.TransactionCache.Add(msg.Hash(), READY)
+	// peerManagerID := ManagerNodeID(msg.ID)
+	// manager.ManagerMutex.Lock()
+	// defer manager.ManagerMutex.Unlock()
+	// if _, exist := manager.ManagerPeers[peerManagerID]; exist {
+	// *state = ABORT
+	// 	manager.TransactionCache.Add(msg.Hash(), ABORT)
+	// 	return nil
+	// }
+
+	manager.TransactionCache.Add(msg.Hash(), PREPARE)
+	*state = PREPARE
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) PreCommitRegisterPeerRPC(msg *m.Message, ack *bool) error {
+func (mrpc *ManagerRPCServer) PreCommitRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 	manager.TransactionCache.Add(msg.Hash(), PREPARE)
 	*ack = true
@@ -741,6 +885,31 @@ func (mrpc *ManagerRPCServer) CommitRegisterPeerRPC(msg *m.Message, ack *bool) e
 	ring = ring.AddNode(peerManagerAddr.String())
 
 	fmt.Printf("added peer - %v - %v\n", peerManagerID, peerManagerAddr)
+	fmt.Println("Peer Map: ", manager.ManagerPeers)
+
+	manager.TransactionCache.Add(msg.Hash(), COMMIT)
+	*ack = true
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) CommitDeletePeerRPC(msg *m.Message, ack *bool) error {
+	*ack = false
+	peerManagerID := ManagerNodeID(msg.ID)
+	peerManagerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+
+	fmt.Println(peerManagerAddr, peerManagerID)
+
+	if err != nil {
+		return err
+	}
+
+	manager.ManagerMutex.Lock()
+	delete(manager.ManagerPeers, peerManagerID)
+	manager.ManagerMutex.Unlock()
+
+	// ring = ring.AddNode(peerManagerAddr.String())
+
+	fmt.Printf("Delete Peer - %v - %v\n", peerManagerID, peerManagerAddr)
 	fmt.Println("Peer Map: ", manager.ManagerPeers)
 
 	manager.TransactionCache.Add(msg.Hash(), COMMIT)
@@ -781,13 +950,18 @@ func (mrpc *ManagerRPCServer) Ack(addr string, ack *bool) error {
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) error {
+func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) (err error) {
 	*ack = false
 
 	fmt.Println(msg.Text)
 	fmt.Println(msg.ID)
 
 	rAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+	defer func() {
+		if p := recover(); p != nil {
+			err = NewConnectionErr(ManagerNodeID("unkown"), rAddr, fmt.Errorf("%v", p))
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -915,7 +1089,7 @@ func shell() {
 			fmt.Printf("%v\n", server)
 		} else if cmd == "topicmap\n" {
 
-		} else if cmd == "peer\n"{
+		} else if cmd == "peer\n" {
 			fmt.Println(manager.ManagerPeers)
 		}
 	}
@@ -947,7 +1121,39 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 			return doneCall.Error
 		}
 	case <-time.After(time.Duration(3) * time.Second):
-		return fmt.Errorf("rpc call: %v has timed out", rpcCall.ServiceMethod)
+		return NewRPCTimedout(rpcCall.ServiceMethod)
 	}
 	return nil
+}
+
+func NewConnectionErr(nodeID ManagerNodeID, addr net.Addr, err error) *ConnectionErr {
+	return &ConnectionErr{
+		Addr:   addr,
+		NodeID: nodeID,
+		Err:    err,
+	}
+}
+
+func NewTransactionErr(err error) *TransactionErr {
+	return &TransactionErr{
+		Err: err,
+	}
+}
+
+func (e *TransactionErr) Error() string {
+	return fmt.Sprintf("transaction aborted: %v", e.Err)
+}
+
+func (e *ConnectionErr) Error() string {
+	return fmt.Sprintf("bad connection - %v - %v: %v", e.NodeID, e.Addr.String(), e.Err)
+}
+
+func NewRPCTimedout(serviceMethod string) *RPCTimedout {
+	return &RPCTimedout{
+		ServiceMethod: serviceMethod,
+	}
+}
+
+func (e *RPCTimedout) Error() string {
+	return fmt.Sprintf("rpc call: %v has timed out", e.ServiceMethod)
 }
