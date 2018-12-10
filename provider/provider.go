@@ -20,7 +20,7 @@ import (
 
 type configSetting struct {
 	ProviderID          string
-	KafkaManagerIPPorts []string
+	KafkaManagerIPPorts string
 }
 
 var config configSetting
@@ -154,30 +154,26 @@ func initialize() {
 func CreateNewTopic(topic string, partitionNumber uint8) {
 	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	options := govec.GetDefaultLogOptions()
-	for _, managerIP := range config.KafkaManagerIPPorts {
-		client, err := vrpc.RPCDial("tcp", managerIP, logger, options)
-		if err != nil {
-			continue
-			// log.Fatal(err)
-		}
-		var response message.Message
-		err = client.Call("ManagerRPCServer.CreateNewTopic",
-			message.Message{
-				ID:        config.ProviderID,
-				Type:      message.NEW_TOPIC,
-				Topic:     topic,
-				Role:      message.PROVIDER,
-				Timestamp: time.Now(),
-				Partition: partitionNumber,
-			},
-			&response)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Printf("Success: %v\n", response.IPs)
-
+	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, options)
+	if err != nil {
+		log.Fatal(err)
 	}
+	var response message.Message
+	err = client.Call("ManagerRPCServer.CreateNewTopic",
+		message.Message{
+			ID:        config.ProviderID,
+			Type:      message.NEW_TOPIC,
+			Topic:     topic,
+			Role:      message.PROVIDER,
+			Timestamp: time.Now(),
+			Partition: partitionNumber,
+		},
+		&response)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Success: %v\n", response.IPs)
 }
 
 func main() {
@@ -206,6 +202,6 @@ func main() {
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
 
-	CreateNewTopic("CS", 2)
+	CreateNewTopic("CS", 3)
 
 }

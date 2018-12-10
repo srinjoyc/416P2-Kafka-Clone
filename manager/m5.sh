@@ -1,0 +1,1 @@
+go run manager.go m5.json

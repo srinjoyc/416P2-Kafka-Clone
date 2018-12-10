@@ -2,5 +2,5 @@ client {"client":1}
 Initialization Complete
 client {"client":2}
 Making RPC call
-client {"m2":12, "m3":2, "client":3, "m4":2, "m1":17}
+client {"m3":54, "b2":2, "b4":2, "client":3, "m2":53, "m1":108, "b3":2, "m4":33, "b1":2}
 Received RPC Call response from server

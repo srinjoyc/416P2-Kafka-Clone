@@ -77,11 +77,10 @@ type BrokerID string
 
 type ManagerNodeID string
 
-type Topic []*Partition
-
-type Partition struct {
-	LeaderIP    string
-	FollowerIPs []string
+type Topic struct {
+	LeaderIP     string
+	FollowerIPs  []string
+	PartitionNum uint8
 }
 
 type configSetting struct {
@@ -830,7 +829,7 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerA
 //-----------------------------------------------------------------------------------------------------------------------------
 
 func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
-	fmt.Println("CanCommitRegisterPeerRPC")
+	fmt.Println("CanCommitRPC")
 	v, exist := manager.TransactionCache.Get(msg.Hash())
 	if exist {
 		s, ok := v.(State)
@@ -844,6 +843,7 @@ func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 			return nil
 		}
 	}
+
 	// return err and set Transaction Cache as Abort on unwanted cases
 
 	// peerManagerID := ManagerNodeID(msg.ID)
@@ -856,6 +856,7 @@ func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 	// }
 
 	manager.TransactionCache.Add(msg.Hash(), PREPARE)
+	println("CanCommitRPC prepare")
 	*state = PREPARE
 	return nil
 }
@@ -919,32 +920,6 @@ func (mrpc *ManagerRPCServer) CommitDeletePeerRPC(msg *m.Message, ack *bool) err
 
 //----------------------------------------------------------------------------------------------------------------------
 
-func (mrpc *ManagerRPCServer) CanCommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
-	fmt.Println("CanCommitRegistBrokerRPC")
-	*ack = false
-	peerManagerID := ManagerNodeID(msg.ID)
-
-	manager.ManagerMutex.Lock()
-	defer manager.ManagerMutex.Unlock()
-
-	if _, exist := manager.ManagerPeers[peerManagerID]; exist {
-		fmt.Println("Manager", peerManagerID)
-		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return nil
-	}
-
-	*ack = true
-	manager.TransactionCache.Add(msg.Hash(), READY)
-	return nil
-}
-
-func (mrpc *ManagerRPCServer) PreCommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
-	*ack = false
-	manager.TransactionCache.Add(msg.Hash(), PREPARE)
-	*ack = true
-	return nil
-}
-
 func (mrpc *ManagerRPCServer) CommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 	BrokerNodeID := BrokerID(msg.ID)
@@ -962,6 +937,39 @@ func (mrpc *ManagerRPCServer) CommitRegistBrokerRPC(msg *m.Message, ack *bool) e
 
 	fmt.Printf("added peer - %v - %v\n", BrokerNodeID, BrokerAddr)
 	fmt.Println("Broker Map: ", manager.BrokerNodes)
+
+	manager.TransactionCache.Add(msg.Hash(), COMMIT)
+	*ack = true
+	return nil
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+
+func (mrpc *ManagerRPCServer) CommitNewTopicRPC(msg *m.Message, ack *bool) error {
+	fmt.Println("CommitNewTopicRPC")
+	*ack = false
+	ProviderID := msg.ID
+	ProviderAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+
+	println("------------------------------")
+	fmt.Printf("%+v\n", msg)
+
+	if err != nil {
+		return err
+	}
+	var topicInfo Topic
+	if len(msg.IPs) > 1 {
+		topicInfo = Topic{LeaderIP: msg.IPs[0], FollowerIPs: msg.IPs[1:], PartitionNum: msg.Partition}
+	} else {
+		topicInfo = Topic{LeaderIP: msg.IPs[0], PartitionNum: msg.Partition}
+	}
+	println("------------------------------")
+	manager.TopicMutex.Lock()
+	manager.TopicMap[TopicID(msg.Topic)] = topicInfo
+	manager.TopicMutex.Unlock()
+
+	fmt.Printf("added topic - from provider %v - %v\n", ProviderID, ProviderAddr)
+	printTopicMap()
 
 	manager.TransactionCache.Add(msg.Hash(), COMMIT)
 	*ack = true
@@ -1047,10 +1055,8 @@ func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) (err err
 	// manager.addBroker(BrokerID(m.ID), rAddr)
 
 	fmt.Println("Calling three pc to add broker")
-
 	fmt.Println("Current Peers: ", manager.ManagerPeers)
-
-	if err := mrpc.threePC("RegistBroker", msg); err != nil {
+	if err := mrpc.threePC("RegistBroker", msg, manager.ManagerPeers); err != nil {
 		return err
 	}
 
@@ -1059,32 +1065,39 @@ func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) (err err
 
 func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Message) error {
 	println(request.Topic)
-	response.ID = config.ManagerNodeID
-	response.Role = m.MANAGER
-	response.Timestamp = time.Now()
-	response.Type = m.MANAGER_RESPONSE_TO_PROVIDER
 
 	if int(request.Partition) > len(manager.BrokerNodes) {
 		response.Text = "At most " + strconv.Itoa(len(manager.BrokerNodes)) + " partitions"
 		return ErrInsufficientFreeNodes
 		// response.Ack = false
+	} else if _, v := manager.TopicMap[TopicID(request.Topic)]; v {
+		response.Text = "The topic " + request.Topic + "has been created"
+		return errors.New("More than one topic")
 	} else {
-		response.IPs = getHashingNodes(request.Topic, int(request.Partition))
-		// response.Ack = true
 
-		topicGroup := Partition{LeaderIP: response.IPs[0], FollowerIPs: response.IPs[1:]}
-		manager.TopicMutex.Lock()
-		manager.TopicMap[TopicID(request.Topic)] = append(manager.TopicMap[TopicID(request.Topic)], &topicGroup)
-		manager.TopicMutex.Unlock()
+		// response.Ack = true
+		IPs := getHashingNodes(request.Topic, int(request.Partition))
+		msg := &m.Message{ID: request.ID, IPs: IPs, Topic: request.Topic, Partition: request.Partition}
+		mrpc.threePC("NewTopic", msg, manager.ManagerPeers)
+
+		response.IPs = IPs
+		response.ID = config.ManagerNodeID
+		response.Role = m.MANAGER
+		response.Timestamp = time.Now()
+		response.Type = m.MANAGER_RESPONSE_TO_PROVIDER
 	}
 
-	printTopicMap()
+	// printTopicMap()
 
 	return nil
 }
 
 func getHashingNodes(key string, replicaCount int) []string {
 	var list []string
+
+	manager.BrokerMutex.Lock()
+	defer manager.BrokerMutex.Unlock()
+
 	for _, v := range manager.BrokerNodes {
 		list = append(list, v.String())
 	}
@@ -1097,12 +1110,11 @@ func getHashingNodes(key string, replicaCount int) []string {
 
 func printTopicMap() {
 	println("------------")
-	for key, value := range manager.TopicMap {
+	for key, v := range manager.TopicMap {
 		println("topic:", key)
-		for _, v := range value {
-			println("LeaderIP:", v.LeaderIP)
-			fmt.Printf("%v\n", v.FollowerIPs)
-		}
+		println("LeaderIP:", v.LeaderIP)
+		fmt.Printf("FollowerIP: %v\n", v.FollowerIPs)
+		println("PartitionNum:", v.PartitionNum)
 	}
 	println("------------")
 }

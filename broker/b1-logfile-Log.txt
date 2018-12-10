@@ -1,2 +1,8 @@
 b1 {"b1":1}
 Initialization Complete
+b1 {"b1":2}
+Making RPC call
+b1 {"b1":3, "m1":19, "m2":19, "m3":7, "m4":2}
+Received RPC request
+b1 {"m3":17, "m4":9, "b2":2, "b3":2, "b1":4, "m1":40, "m2":29}
+Received RPC Call response from server

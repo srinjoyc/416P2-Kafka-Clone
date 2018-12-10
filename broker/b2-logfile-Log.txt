@@ -2,7 +2,7 @@ b2 {"b2":1}
 Initialization Complete
 b2 {"b2":2}
 Making RPC call
-b2 {"m3":17, "m1":33, "b2":3, "m2":27, "m4":7, "b1":2}
+b2 {"m3":11, "m2":20, "m1":15, "m4":2, "b2":3}
 Received RPC request
-b2 {"m3":36, "m1":44, "b2":4, "m2":35, "m4":15, "b1":2}
+b2 {"b2":4, "m3":36, "m2":35, "m1":46, "m4":15, "b1":2, "b3":2}
 Received RPC Call response from server
