@@ -2,17 +2,29 @@ m4 {"m4":1}
 Initialization Complete
 m4 {"m4":2}
 Making RPC call
-m4 {"m4":3, "m2":9, "m1":11}
+m4 {"m1":17, "m3":9, "m2":23, "m4":3}
 Received RPC Call response from server
-m4 {"m2":12, "m1":11, "m5":2, "m4":4}
+m4 {"m1":20, "m3":9, "m2":23, "b1":2, "m4":4}
 Received RPC request
-m4 {"m4":5, "m2":12, "m1":11, "m5":2}
+m4 {"m4":5, "m1":20, "m3":9, "m2":23, "b1":2}
 Sending response to RPC request
-m4 {"m5":2, "m4":6, "m2":16, "m1":13}
+m4 {"m4":6, "m1":27, "m3":11, "m2":25, "b1":2}
 Received RPC request
-m4 {"m1":13, "m5":2, "m4":7, "m2":16}
+m4 {"m3":11, "m2":25, "b1":2, "m4":7, "m1":27}
 Sending response to RPC request
-m4 {"m5":2, "m4":8, "m2":20, "m1":15}
+m4 {"m1":32, "m3":13, "m2":27, "b1":2, "m4":8}
 Received RPC request
-m4 {"m2":20, "m1":15, "m5":2, "m4":9}
+m4 {"m2":27, "b1":2, "m4":9, "m1":32, "m3":13}
+Sending response to RPC request
+m4 {"m1":33, "m3":20, "m2":27, "b1":2, "b2":2, "m4":10}
+Received RPC request
+m4 {"b2":2, "m4":11, "m1":33, "m3":20, "m2":27, "b1":2}
+Sending response to RPC request
+m4 {"b2":2, "m4":12, "m1":40, "m3":25, "m2":31, "b1":2}
+Received RPC request
+m4 {"m4":13, "m1":40, "m3":25, "m2":31, "b1":2, "b2":2}
+Sending response to RPC request
+m4 {"b1":2, "b2":2, "m4":14, "m1":42, "m3":32, "m2":33}
+Received RPC request
+m4 {"m4":15, "m1":42, "m3":32, "m2":33, "b1":2, "b2":2}
 Sending response to RPC request

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
 
 	m "../lib/message"
 	"github.com/serialx/hashring"
@@ -482,13 +482,10 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	return nil
 }
 
-
-
 func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]string) error {
 	fmt.Println("Calling three pc")
 
 	fmt.Println("Current Peers: ", manager.ManagerPeers)
-
 
 	if err := mrpc.threePC("RegisterPeer", msg); err != nil {
 		return err
@@ -502,7 +499,6 @@ func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]
 	(*peerList)[string(manager.ManagerNodeID)] = manager.ManagerIP.String()
 	return nil
 }
-
 
 func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message) error {
 	// canCommitPhase
@@ -550,12 +546,11 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message) er
 				return
 			}
 
-
 			if !ack {
 				errorCh <- fmt.Errorf("peer - %v disagrees", managerPeerAddr)
 			}
 
-			fmt.Println("Can commit response: ",managerPeerAddr, ack)
+			fmt.Println("Can commit response: ", managerPeerAddr, ack)
 
 		}(managerPeer)
 	}
@@ -655,7 +650,6 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 				errorCh <- err
 				return
 			}
-			
 
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
@@ -670,7 +664,6 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 		wg.Wait()
 	}()
 
-
 	select {
 	case err := <-errorCh:
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
@@ -678,7 +671,6 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message) error
 	case <-c:
 		fmt.Println("Commit Phase Done")
 	}
-
 
 	// Local Commit
 	var ack bool
@@ -749,6 +741,57 @@ func (mrpc *ManagerRPCServer) CommitRegisterPeerRPC(msg *m.Message, ack *bool) e
 }
 
 //----------------------------------------------------------------------------------------------------------------------
+
+func (mrpc *ManagerRPCServer) CanCommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
+	fmt.Println("CanCommitRegistBrokerRPC")
+	*ack = false
+	peerManagerID := ManagerNodeID(msg.ID)
+
+	manager.ManagerMutex.Lock()
+	defer manager.ManagerMutex.Unlock()
+
+	if _, exist := manager.ManagerPeers[peerManagerID]; exist {
+		fmt.Println("Manager", peerManagerID)
+		manager.TransactionCache.Add(msg.Hash(), ABORT)
+		return nil
+	}
+
+	*ack = true
+	manager.TransactionCache.Add(msg.Hash(), READY)
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) PreCommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
+	*ack = false
+	manager.TransactionCache.Add(msg.Hash(), PREPARE)
+	*ack = true
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) CommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
+	*ack = false
+	BrokerNodeID := BrokerID(msg.ID)
+	BrokerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+
+	fmt.Println(BrokerAddr, BrokerNodeID)
+
+	if err != nil {
+		return err
+	}
+
+	manager.BrokerMutex.Lock()
+	manager.BrokerNodes[BrokerNodeID] = BrokerAddr
+	manager.BrokerMutex.Unlock()
+
+	fmt.Printf("added peer - %v - %v\n", BrokerNodeID, BrokerAddr)
+	fmt.Println("Broker Map: ", manager.BrokerNodes)
+
+	manager.TransactionCache.Add(msg.Hash(), COMMIT)
+	*ack = true
+	return nil
+}
+
+/*----------------------------------------------------------------------------------------------------------------*/
 
 func spawnRPCServer() error {
 	mRPC := new(ManagerRPCServer)
@@ -821,26 +864,14 @@ func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) error {
 	// add the broker informtaion into list
 	// manager.addBroker(BrokerID(m.ID), rAddr)
 
-	if err := manager.addBroker(BrokerID(msg.ID), rAddr); err != nil {
+	fmt.Println("Calling three pc to add broker")
+
+	fmt.Println("Current Peers: ", manager.ManagerPeers)
+
+	if err := mrpc.threePC("RegistBroker", msg); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func (mn *ManagerNode) addBroker(nodeID BrokerID, brokerAddr net.Addr) error {
-	manager.BrokerMutex.Lock()
-	defer manager.BrokerMutex.Unlock()
-	/*
-	* 	No exist check due to Broker Rejoin
-	 */
-
-	// if _, exist := manager.BrokerNodes[nodeID]; exist{
-	// 	return fmt.Errorf("Broker has already been registered")
-	// }
-
-	manager.BrokerNodes[nodeID] = brokerAddr
-	fmt.Printf("sucessfully added broker: %v - %v\n", nodeID, brokerAddr)
 	return nil
 }
 
@@ -913,10 +944,8 @@ func shell() {
 			fmt.Scanf("%d", &n)
 			server := getHashingNodes(v, n)
 			fmt.Printf("%v\n", server)
-		} else if cmd == "topicmap\n" {
-
-		} else if cmd == "peer\n"{
-			fmt.Println(manager.ManagerPeers)
+		} else if cmd == "peer\n" {
+			fmt.Printf("%+v\n", manager.ManagerPeers)
 		}
 	}
 }

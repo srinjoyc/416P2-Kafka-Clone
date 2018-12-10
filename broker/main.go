@@ -1,21 +1,21 @@
 package main
 
 import (
-	"net"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 
-	m"../lib/message"
+	m "../lib/message"
 	"github.com/DistributedClocks/GoVector/govec"
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
 type configSetting struct {
-	BrokerNodeID      string
-	BrokerIP          string
-	ManagerIPs    []string
+	BrokerNodeID string
+	BrokerIP     string
+	ManagerIP    string
 }
 
 var config configSetting
@@ -56,17 +56,16 @@ func Initialize() error {
 	logger = govec.InitGoVector(config.BrokerNodeID, fmt.Sprintf("%v-logfile", config.BrokerNodeID), govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 
-
 	fmt.Println(config.BrokerIP)
 
 	return nil
 }
 
-func registerBrokerWithManager() error{
+func registerBrokerWithManager() error {
 
-	fmt.Println(config.ManagerIPs)
+	fmt.Println("ManagerIP", config.ManagerIP)
 
-	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIPs[0])
+	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
 
 	if err != nil {
 		return err
@@ -79,20 +78,19 @@ func registerBrokerWithManager() error{
 	}
 
 	message := m.Message{
-		ID: config.BrokerNodeID,
+		ID:   config.BrokerNodeID,
 		Text: config.BrokerIP,
 	}
 
 	var ack bool
 
-	if err:=rpcClient.Call("ManagerRPCServer.RegisterBroker", message, &ack); err!=nil{
+	if err := rpcClient.Call("ManagerRPCServer.RegisterBroker", message, &ack); err != nil {
 		return err
 	}
 
 	return nil
-	
-}
 
+}
 
 func main() {
 
