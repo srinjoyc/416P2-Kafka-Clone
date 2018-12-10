@@ -1,13 +1,19 @@
 package main
 
-import "github.com/serialx/hashring"
+import (
+	"fmt"
+
+	lru "github.com/hashicorp/golang-lru"
+)
 
 func main() {
-	memcacheServers := []string{"192.168.0.246:11212",
-		"192.168.0.247:11212",
-		"192.168.0.249:11212"}
-
-	ring := hashring.New(memcacheServers)
-	server, _ := ring.GetNode("my_key")
-	println(server)
+	l, _ := lru.New(5)
+	for i := 0; i < 10; i++ {
+		l.Add(i, nil)
+	}
+	for i := 0; i < 10; i++ {
+		if _, v := l.Get(i); true {
+			fmt.Printf("%+v\n", v)
+		}
+	}
 }

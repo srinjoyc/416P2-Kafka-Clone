@@ -1,6 +1,0 @@
-m5 {"m5":1}
-Initialization Complete
-m5 {"m5":2}
-Making RPC call
-m5 {"m4":9, "m5":3, "m2":23, "m1":17}
-Received RPC Call response from server

@@ -172,14 +172,10 @@ func CreateNewTopic(topic string, partitionNumber uint8) {
 			},
 			&response)
 		if err != nil {
-			continue
-			// log.Fatal(err)
+			log.Fatal(err)
 		}
-		if response.Ack == false {
-			fmt.Printf("Error: %v\n", response.Text)
-		} else {
-			fmt.Printf("Success: %v\n", response.IPs)
-		}
+
+		fmt.Printf("Success: %v\n", response.IPs)
 
 	}
 }
@@ -210,6 +206,6 @@ func main() {
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
 
-	CreateNewTopic("CS", 3)
+	CreateNewTopic("CS", 2)
 
 }

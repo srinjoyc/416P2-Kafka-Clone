@@ -1,14 +1,2 @@
 b1 {"b1":1}
 Initialization Complete
-b1 {"b1":2}
-Making RPC call
-<<<<<<< HEAD
-b1 {"b1":3, "m1":7, "m2":4}
-Received RPC request
-b1 {"b1":4, "m1":8, "m2":4}
-=======
-b1 {"b1":3, "m1":3}
-Received RPC request
-b1 {"b1":4, "m1":6, "b2":2}
->>>>>>> 343cf2c3a8b10cb6e6f795b7994e08c530dba93e
-Received RPC Call response from server

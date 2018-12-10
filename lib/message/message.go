@@ -1,9 +1,9 @@
 package message
 
 import (
+	"crypto/sha1"
 	"strconv"
 	"time"
-	"crypto/sha1"
 )
 
 type OPCODE uint
@@ -41,11 +41,12 @@ type Message struct {
 	Partition uint8
 	Role      ROLE
 	Proposer  string
-	IPs []string
+	IPs       []string
 	Timestamp time.Time
+	Ack       bool
 }
 
-func (m *Message) Hash() [sha1.Size]byte{
+func (m *Message) Hash() [sha1.Size]byte {
 	var buf []byte
 
 	buf = append(buf, []byte(m.ID)...)
@@ -56,14 +57,12 @@ func (m *Message) Hash() [sha1.Size]byte{
 	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Role), 10))...)
 	buf = append(buf, []byte(m.Proposer)...)
 
-	for _, ip := range m.IPs{
+	for _, ip := range m.IPs {
 		buf = append(buf, []byte(ip)...)
 	}
 
 	timeByte, _ := m.Timestamp.MarshalText()
 	buf = append(buf, timeByte...)
-
-
 
 	return sha1.Sum(buf)
 }

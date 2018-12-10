@@ -1,6 +1,0 @@
-m4 {"m4":1}
-Initialization Complete
-m4 {"m4":2}
-Making RPC call
-m4 {"m1":5, "m2":2, "m4":3}
-Received RPC Call response from server
