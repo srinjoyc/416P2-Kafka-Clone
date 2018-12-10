@@ -1,5 +1,5 @@
 {
     "BrokerNodeID": "b2",
     "BrokerIP": "127.0.0.1:3002",
-    "ManagerIP": "127.0.0.1:9083"
+    "ManagerIP": "127.0.0.1:9080"
 }

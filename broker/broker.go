@@ -2,18 +2,21 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 
+	IOlib "../lib/IOlib"
 	m "../lib/message"
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
-type Status int
-
 type BrokerRPCServer int
+
+type Status int
 
 type consumerId string
 
@@ -26,12 +29,13 @@ type Peer struct {
 }
 
 type Topic struct {
-	topicID        string
-	partitionIdx   uint8
-	partition      partition
-	consumerOffset map[consumerId]uint
-	Status
-	FollowerList map[net.Addr]bool
+	topicID          string
+	ReplicaNum       int
+	partitionNum     uint8
+	Role             Status
+	Buffer           map[int][]byte
+	FollowerList     []string
+	FollowerPeerList []string
 }
 
 const (
@@ -196,32 +200,42 @@ func spawnListener(addr string) {
 
 func (bs *BrokerRPCServer) StartLeader(message *m.Message, ack *bool) error {
 	*ack = true
-
+	fmt.Println("\nLeader ID", config.BrokerNodeID)
 	fmt.Println("Leader Topic Name", message.Topic)
 
 	topic := &Topic{
-		topicID:        message.Topic,
-		partitionIdx:   message.Partition,
-		partition:      partition{},
-		consumerOffset: make(map[consumerId]uint),
-		Status:         Leader,
-		FollowerList:   make(map[net.Addr]bool),
+		topicID:      message.Topic,
+		ReplicaNum:   message.ReplicaNum,
+		partitionNum: message.Partition,
+		Role:         Leader,
+		FollowerList: message.IPs,
 	}
+
+	fmt.Printf("topic: %+v\n", topic)
 
 	if _, exist := b.topicList[topic.topicID]; exist {
 		return fmt.Errorf("Topic ID has already existed")
 	}
 
-	if message.Text == "" {
-		fmt.Println("text is empty")
-		return nil
+	if message.Type == m.CREATE_NEW_TOPIC {
+		for i := 0; i < int(message.Partition); i++ {
+			filepostion := "./disk/broker_" + config.BrokerNodeID + "_" + message.Topic + "_" + strconv.Itoa(i)
+			// b.topicList[topic.topicID].Buffer[i] = []byte("")
+			IOlib.WriteFile(filepostion, "", false)
+		}
 	}
 
 	followersIP := message.IPs
 
-	followerMessage := &m.Message{Topic: message.Topic, Partition: message.Partition}
+	followerMessage := &m.Message{
+		Topic:      message.Topic,
+		Type:       message.Type,
+		Partition:  message.Partition,
+		ReplicaNum: message.ReplicaNum,
+		IPs:        message.IPs,
+	}
 
-	fmt.Printf("%+v\n", followerMessage)
+	fmt.Printf("followerMessage: %+v\n", followerMessage)
 
 	var waitGroup sync.WaitGroup
 
@@ -230,7 +244,7 @@ func (bs *BrokerRPCServer) StartLeader(message *m.Message, ack *bool) error {
 	fmt.Println("follower len", len(followersIP))
 
 	for _, ip := range followersIP {
-		fmt.Println("Looping")
+		fmt.Println("Looping", ip)
 		go broadcastToFollowers(*followerMessage, ip, &waitGroup)
 	}
 	waitGroup.Wait()
@@ -239,27 +253,15 @@ func (bs *BrokerRPCServer) StartLeader(message *m.Message, ack *bool) error {
 }
 
 func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) error {
-	destAddr, err := net.ResolveTCPAddr("tcp", addr)
+
+	client, err := vrpc.RPCDial("tcp", addr, logger, loggerOptions)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-
-	// lAddr, err := net.ResolveTCPAddr("tcp", config.BrokerIP)
-	// if err != nil {
-	// 	return err
-	// }
-
-	conn, err := net.DialTCP("tcp", nil, destAddr)
-
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	rpcClient := rpc.NewClient(conn)
 
 	var ack bool
-
-	if err := rpcClient.Call("BrokerRPCServer.StartFollower", message, &ack); err != nil {
+	println("broadcasting", addr)
+	if err := client.Call("BrokerRPCServer.StartFollower", message, &ack); err != nil {
 		return err
 	}
 
@@ -279,22 +281,29 @@ func (bs *BrokerRPCServer) Ping(message *m.Message, ack *bool) error {
 
 func (bs *BrokerRPCServer) StartFollower(message *m.Message, ack *bool) error {
 	fmt.Println("Start Follower")
-	fmt.Println(message.Topic)
+	fmt.Println("Topic:", message.Topic)
 
 	*ack = true
 
 	topic := &Topic{
-		topicID:        message.Topic,
-		partitionIdx:   message.Partition,
-		partition:      partition{},
-		consumerOffset: make(map[consumerId]uint),
-		Status:         Leader,
-		FollowerList:   make(map[net.Addr]bool),
+		topicID:          message.Topic,
+		ReplicaNum:       message.ReplicaNum,
+		partitionNum:     message.Partition,
+		Role:             Leader,
+		FollowerPeerList: message.IPs,
 	}
 
 	if _, exist := b.topicList[topic.topicID]; exist {
 		*ack = false
 		return fmt.Errorf("Topic ID has already existed")
+	}
+
+	if message.Type == m.CREATE_NEW_TOPIC {
+		for i := 0; i < int(message.Partition); i++ {
+			filepostion := "./disk/broker_" + config.BrokerNodeID + "_" + message.Topic + "_" + strconv.Itoa(i)
+			// b.topicList[topic.topicID].Buffer[i] = []byte("")
+			IOlib.WriteFile(filepostion, "", false)
+		}
 	}
 
 	return nil

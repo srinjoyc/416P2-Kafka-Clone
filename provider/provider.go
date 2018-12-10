@@ -151,7 +151,7 @@ func initialize() {
 	readConfigJSON(os.Args[1])
 }
 
-func CreateNewTopic(topic string, partitionNumber uint8) {
+func CreateNewTopic(topic string, replicaNum int, partitionNumber uint8) {
 	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	options := govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, options)
@@ -161,12 +161,13 @@ func CreateNewTopic(topic string, partitionNumber uint8) {
 	var response message.Message
 	err = client.Call("ManagerRPCServer.CreateNewTopic",
 		message.Message{
-			ID:        config.ProviderID,
-			Type:      message.NEW_TOPIC,
-			Topic:     topic,
-			Role:      message.PROVIDER,
-			Timestamp: time.Now(),
-			Partition: partitionNumber,
+			ID:         config.ProviderID,
+			Type:       message.NEW_TOPIC,
+			Topic:      topic,
+			Role:       message.PROVIDER,
+			Timestamp:  time.Now(),
+			Partition:  partitionNumber,
+			ReplicaNum: replicaNum,
 		},
 		&response)
 	if err != nil {
@@ -202,6 +203,6 @@ func main() {
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
 
-	CreateNewTopic("CS", 3)
+	CreateNewTopic("CS", 3, 2)
 
 }

@@ -1066,7 +1066,7 @@ func (mrpc *ManagerRPCServer) RegisterBroker(msg *m.Message, ack *bool) (err err
 func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Message) error {
 	println(request.Topic)
 
-	if int(request.Partition) > len(manager.BrokerNodes) {
+	if int(request.ReplicaNum) > len(manager.BrokerNodes) {
 		response.Text = "At most " + strconv.Itoa(len(manager.BrokerNodes)) + " partitions"
 		return ErrInsufficientFreeNodes
 		// response.Ack = false
@@ -1076,15 +1076,40 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 	} else {
 
 		// response.Ack = true
-		IPs := getHashingNodes(request.Topic, int(request.Partition))
+		IPs := getHashingNodes(request.Topic, int(request.ReplicaNum))
 		msg := &m.Message{ID: request.ID, IPs: IPs, Topic: request.Topic, Partition: request.Partition}
-		mrpc.threePC("NewTopic", msg, manager.ManagerPeers)
+		err := mrpc.threePC("NewTopic", msg, manager.ManagerPeers)
+		if err != nil {
+			return err
+		}
+
+		// StartLeader
+		startLeaderMsg := m.Message{
+			ID:         config.ManagerNodeID,
+			Topic:      request.Topic,
+			Partition:  request.Partition,
+			IPs:        IPs[1:],
+			Type:       m.CREATE_NEW_TOPIC,
+			ReplicaNum: request.ReplicaNum,
+		}
+
+		rpcClient, err := vrpc.RPCDial("tcp", IPs[0], logger, loggerOptions)
+		defer rpcClient.Close()
+		if err != nil {
+			return err
+		}
+		var ack bool
+		err = rpcClient.Call("BrokerRPCServer.StartLeader", startLeaderMsg, &ack)
+		if err != nil {
+			return err
+		}
 
 		response.IPs = IPs
 		response.ID = config.ManagerNodeID
 		response.Role = m.MANAGER
 		response.Timestamp = time.Now()
 		response.Type = m.MANAGER_RESPONSE_TO_PROVIDER
+
 	}
 
 	// printTopicMap()

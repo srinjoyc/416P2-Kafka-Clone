@@ -2,7 +2,19 @@ b4 {"b4":1}
 Initialization Complete
 b4 {"b4":2}
 Making RPC call
-b4 {"m1":48, "m2":33, "m3":31, "b4":3, "m4":13, "b1":2, "b3":2, "b2":2}
+b4 {"b1":2, "b4":3, "b2":2, "b3":2, "m1":25, "m2":15}
 Received RPC request
-b4 {"b1":2, "b3":2, "b2":2, "m1":86, "m2":47, "m3":48, "b4":4, "m4":27}
+b4 {"b4":4, "b2":2, "b3":2, "m1":39, "m2":27, "b1":2}
 Received RPC Call response from server
+b4 {"client":2, "b4":5, "b2":2, "b3":2, "m1":47, "m2":33, "b1":2}
+Received RPC request
+b4 {"b4":6, "b2":2, "b3":2, "m1":47, "m2":33, "b1":2, "client":2}
+Making RPC call
+b4 {"m1":47, "m2":33, "b1":2, "client":2, "b4":7, "b2":2, "b3":2}
+Making RPC call
+b4 {"b3":2, "m1":47, "m2":33, "b1":2, "client":2, "b4":8, "b2":6}
+Received RPC Call response from server
+b4 {"b4":9, "b2":6, "b3":6, "m1":47, "m2":33, "b1":2, "client":2}
+Received RPC Call response from server
+b4 {"b4":10, "b2":6, "b3":6, "m1":47, "m2":33, "b1":2, "client":2}
+Sending response to RPC request

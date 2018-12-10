@@ -32,3 +32,29 @@ func Sendfile(conn *net.TCPConn, filename string, startOffset int64, length int6
 	n, err = conn.ReadFrom(lr)
 	return
 }
+
+/*
+Name: writeFile
+@ para: filePath string
+@ para: content string
+@ para: appendEnable string
+@ Return: None
+Func: write the string content into assigned path by method of overwriting or appending
+*/
+func WriteFile(filePath string, content string, appendEnable bool) {
+	if appendEnable == false {
+		f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		f.WriteString(content)
+	} else {
+		f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		f.WriteString(content)
+	}
+}

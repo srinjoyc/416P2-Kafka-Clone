@@ -49,6 +49,11 @@ func readConfigJSON(configFile string) error {
 func Initialize() error {
 	configFilename := os.Args[1]
 
+	_, err := os.Stat("disk")
+	if err != nil {
+		os.Mkdir("disk", os.ModePerm)
+	}
+
 	if err := readConfigJSON(configFilename); err != nil {
 		return err
 	}

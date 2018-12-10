@@ -22,6 +22,8 @@ const (
 	MANAGER_SYNC
 	MANAGER_PUSH
 	MANAGER_RESPONSE_TO_PROVIDER
+	CREATE_NEW_TOPIC
+	PUSHMESSAGE
 )
 
 const (
@@ -34,16 +36,16 @@ const (
 
 // Message is used for communication among nodes
 type Message struct {
-	ID        string
-	Type      OPCODE
-	Text      string
-	Topic     string
-	Partition uint8
-	Role      ROLE
-	Proposer  string
-	IPs       []string
-	Timestamp time.Time
-	Ack       bool
+	ID         string
+	Type       OPCODE
+	Text       string
+	Topic      string
+	Partition  uint8
+	Role       ROLE
+	Proposer   string
+	IPs        []string
+	Timestamp  time.Time
+	ReplicaNum int
 }
 
 func (m *Message) Hash() [sha1.Size]byte {
