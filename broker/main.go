@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -106,16 +107,51 @@ func main() {
 		return
 	}
 
+	go shell()
+
 	err := Initialize()
 	checkError(err)
 
 	err = InitBroker(config.BrokerIP)
 	checkError(err)
+
+	
 }
 
 func checkError(err error) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
+	}
+}
+
+func shell() {
+	fmt.Println("Shell Started")
+
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		cmd, _ := reader.ReadString('\n')
+		if cmd == "partition\n" {
+			fmt.Println("Here's partition")
+			fmt.Printf("%v\n", broker.partitionMap)
+		}
+		// } else if cmd == "ring\n" {
+
+		// 	server, _ := ring.GetNode("my_key")
+		// 	println(server)
+
+		// } else if cmd == "ring2\n" {
+		// 	var v string
+		// 	fmt.Scanf("%s", &v)
+
+		// 	var n int
+		// 	fmt.Scanf("%d", &n)
+		// 	server := getHashingNodes(v, n)
+		// 	fmt.Printf("%v\n", server)
+		// } else if cmd == "topicmap\n" {
+
+		// } else if cmd == "peer\n" {
+		// 	fmt.Println(manager.ManagerPeers)
+		// }
 	}
 }

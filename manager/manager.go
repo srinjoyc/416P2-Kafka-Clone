@@ -30,7 +30,7 @@ import (
 var ErrInsufficientFreeNodes = errors.New("insufficient free nodes")
 
 type ConnectionErr struct {
-	Addr   net.Addr
+	Addr   string
 	NodeID ManagerNodeID
 	Err    error
 }
@@ -53,7 +53,7 @@ type RecoveryErr struct {
 }
 
 type TimeoutErr struct {
-	Addr   net.Addr
+	Addr   string
 	NodeID ManagerNodeID
 	Err    error
 }
@@ -67,10 +67,10 @@ type ManagerRPCServer int
 
 type ManagerNode struct {
 	ManagerNodeID    ManagerNodeID
-	ManagerPeers     map[ManagerNodeID]net.Addr
-	ManagerIP        net.Addr
+	ManagerPeers     map[ManagerNodeID]string
+	ManagerIP        string
 	TopicMap         map[string]Topic
-	BrokerNodes      map[BrokerNodeID]net.Addr
+	BrokerNodes      map[BrokerNodeID]string
 	TopicMutex       *sync.Mutex
 	ManagerMutex     *sync.Mutex
 	BrokerMutex      *sync.Mutex
@@ -98,8 +98,8 @@ type ManagerNodeID string
 type Partition struct {
 	TopicName    string
 	PartitionIdx uint8
-	LeaderIP     net.Addr
-	FollowerIPs  []net.Addr
+	LeaderNodeID BrokerNodeID
+	FollowerIPs	map[BrokerNodeID]string
 }
 
 type Topic struct {
@@ -149,16 +149,13 @@ func Initialize(configFileName string) error {
 		return fmt.Errorf("initialize error: %v", err)
 	}
 	println("Manager", config.ManagerIP, "starts")
-	managerIP, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
-	if err != nil {
-		return err
-	}
+
 	manager = &ManagerNode{
 		ManagerNodeID: ManagerNodeID(config.ManagerNodeID),
-		ManagerIP:     managerIP,
+		ManagerIP:     config.ManagerIP,
 		TopicMap:      make(map[string]Topic),
-		ManagerPeers:  make(map[ManagerNodeID]net.Addr),
-		BrokerNodes:   make(map[BrokerNodeID]net.Addr),
+		ManagerPeers:  make(map[ManagerNodeID]string),
+		BrokerNodes:   make(map[BrokerNodeID]string),
 		TopicMutex:    &sync.Mutex{},
 		ManagerMutex:  &sync.Mutex{},
 		BrokerMutex:   &sync.Mutex{},
@@ -191,16 +188,14 @@ func Initialize(configFileName string) error {
 
 func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	fmt.Println("registerPeerRequest")
-	rAddr, err := net.ResolveTCPAddr("tcp", managerPeerAddr)
+
 	defer func() {
 		if p := recover(); p != nil {
-			err = NewConnectionErr(ManagerNodeID("PrimaryManger"), rAddr, fmt.Errorf("%v", p))
+			err = NewConnectionErr(ManagerNodeID("PrimaryManger"), managerPeerAddr, fmt.Errorf("%v", p))
 		}
 	}()
-	if err != nil {
-		return err
-	}
-	rpcClient, err := vrpc.RPCDial("tcp", rAddr.String(), logger, loggerOptions)
+
+	rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
 	defer rpcClient.Close()
 	if err != nil {
 		return err
@@ -209,7 +204,7 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 
 	newMsg := m.Message{
 		ID:        string(mn.ManagerNodeID),
-		Text:      mn.ManagerIP.String(),
+		Text:      mn.ManagerIP,
 		Proposer:  string(mn.ManagerNodeID),
 		Timestamp: time.Now(),
 	}
@@ -218,26 +213,13 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 		return err
 	}
 
-	var tmp ManagerNode
-	
-	if err := rpcClient.Call("ManagerRPCServer.GetManagerRPC", manager.ManagerNodeID, &tmp); err != nil {
-		return err
-	}
-
-	fmt.Println("tmp id",tmp.ManagerNodeID)
-
 	manager.ManagerMutex.Lock()
 	for k, v := range peerList {
 		// Skip registering own IP to the Peer Map
 		if ManagerNodeID(k) == manager.ManagerNodeID {
 			continue
 		}
-
-		tcpAddr, err := net.ResolveTCPAddr("tcp", v)
-		if err != nil {
-			continue
-		}
-		manager.ManagerPeers[ManagerNodeID(k)] = tcpAddr
+		manager.ManagerPeers[ManagerNodeID(k)] = v
 	}
 	manager.ManagerMutex.Unlock()
 
@@ -260,7 +242,7 @@ func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]
 			connErr := err.(*ConnectionErr)
 			deleteMsg := m.Message{
 				ID:        string(connErr.NodeID),
-				Text:      connErr.Addr.String(),
+				Text:      connErr.Addr,
 				Proposer:  string(manager.ManagerNodeID),
 				Timestamp: time.Now(),
 			}
@@ -284,12 +266,10 @@ func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]
 
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
-		(*peerList)[string(k)] = v.String()
+		(*peerList)[string(k)] = v
 	}
 	manager.ManagerMutex.Unlock()
-	(*peerList)[string(manager.ManagerNodeID)] = manager.ManagerIP.String()
-
-	
+	(*peerList)[string(manager.ManagerNodeID)] = manager.ManagerIP
 
 	return nil
 }
@@ -299,7 +279,7 @@ func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 
 	delPeerID := ManagerNodeID(msg.ID)
 
-	var newPeerAddr = map[ManagerNodeID]net.Addr{}
+	var newPeerAddr = map[ManagerNodeID]string{}
 
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
@@ -327,7 +307,7 @@ func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, ack *bool) error {
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) error {
+func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) error {
 	// canCommitPhase
 	peerTransactionState, err := mrpc.canCommit(serviceMethod, msg, peerAddrs)
 
@@ -336,7 +316,7 @@ func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peer
 	}
 	// recovery if needed
 	if peerTransactionState != nil {
-		var recoverPeerAddr map[ManagerNodeID]net.Addr
+		var recoverPeerAddr map[ManagerNodeID]string
 		for k, v := range peerTransactionState {
 			if v != COMMIT {
 				recoverPeerAddr[k] = manager.ManagerPeers[k]
@@ -360,7 +340,7 @@ func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peer
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (err error) {
+func (mrpc *ManagerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) (err error) {
 	fmt.Println("Begin Recover")
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
@@ -370,14 +350,14 @@ func (mrpc *ManagerRPCServer) recoverPhase(serviceMethod string, msg *m.Message,
 			continue
 		}
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerPeerAddr string) {
 			defer func() {
 				if p := recover(); p != nil {
 					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
 				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
@@ -425,7 +405,7 @@ func (mrpc *ManagerRPCServer) recoverPhase(serviceMethod string, msg *m.Message,
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (map[ManagerNodeID]State, error) {
+func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) (map[ManagerNodeID]State, error) {
 	// canCommitPhase
 	fmt.Println("CanCommitPhase")
 
@@ -449,7 +429,7 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerPeerAddr string) {
 			// Prevent Closure
 			defer func() {
 				if p := recover(); p != nil {
@@ -457,7 +437,7 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
 				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
@@ -517,21 +497,21 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	return nil, nil
 }
 
-func (mrpc *ManagerRPCServer) preCommit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (err error) {
+func (mrpc *ManagerRPCServer) preCommit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) (err error) {
 	// preCommitPhase
 	fmt.Println("PreCommit Phase")
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerPeerAddr string) {
 			defer func() {
 				if p := recover(); p != nil {
 					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
 				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
@@ -584,19 +564,19 @@ func (mrpc *ManagerRPCServer) preCommit(serviceMethod string, msg *m.Message, pe
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) (err error) {
+func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) (err error) {
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerPeerAddr string) {
 			defer func() {
 				if p := recover(); p != nil {
 					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
 				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
@@ -660,20 +640,20 @@ func (mrpc *ManagerRPCServer) commit(serviceMethod string, msg *m.Message, peerA
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) abort(msg *m.Message, peerAddrs map[ManagerNodeID]net.Addr) {
+func (mrpc *ManagerRPCServer) abort(msg *m.Message, peerAddrs map[ManagerNodeID]string) {
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
 
 	for managerID, managerAddr := range peerAddrs {
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerAddr net.Addr) {
+		go func(managerID ManagerNodeID, managerAddr string) {
 			defer func() {
 				if p := recover(); p != nil {
 					fmt.Println(NewAbortErr(fmt.Errorf("%v", p)))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", managerAddr, logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
 				fmt.Println(NewAbortErr(NewConnectionErr(managerID, managerAddr, err)))
@@ -743,19 +723,15 @@ func (mrpc *ManagerRPCServer) AbortRPC(msg *m.Message, ack *bool) error {
 func (mrpc *ManagerRPCServer) CommitRegisterPeerRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 	peerManagerID := ManagerNodeID(msg.ID)
-	peerManagerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+	peerManagerAddr := msg.Text
 
 	fmt.Println(peerManagerAddr, peerManagerID)
-
-	if err != nil {
-		return err
-	}
 
 	manager.ManagerMutex.Lock()
 	manager.ManagerPeers[peerManagerID] = peerManagerAddr
 	manager.ManagerMutex.Unlock()
 
-	ring = ring.AddNode(peerManagerAddr.String())
+	ring = ring.AddNode(peerManagerAddr)
 
 	fmt.Printf("added peer - %v - %v\n", peerManagerID, peerManagerAddr)
 	fmt.Println("Peer Map: ", manager.ManagerPeers)
@@ -793,13 +769,7 @@ func (mrpc *ManagerRPCServer) CommitDeletePeerRPC(msg *m.Message, ack *bool) err
 func (mrpc *ManagerRPCServer) CommitAddBrokerRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 	brokerID := BrokerNodeID(msg.ID)
-	brokerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
-
-	fmt.Println(brokerID, brokerAddr)
-
-	if err != nil {
-		return err
-	}
+	brokerAddr := msg.Text
 
 	manager.BrokerMutex.Lock()
 	manager.BrokerNodes[brokerID] = brokerAddr
@@ -820,14 +790,9 @@ func (mrpc *ManagerRPCServer) CommitAddBrokerRPC(msg *m.Message, ack *bool) erro
 func (mrpc *ManagerRPCServer) CommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 	BrokerNodeID := BrokerNodeID(msg.ID)
-	BrokerAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
+	BrokerAddr := msg.Text
 
 	fmt.Println(BrokerAddr, BrokerNodeID)
-
-	if err != nil {
-		return err
-	}
-
 	manager.BrokerMutex.Lock()
 	manager.BrokerNodes[BrokerNodeID] = BrokerAddr
 	manager.BrokerMutex.Unlock()
@@ -928,74 +893,89 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 	} else {
 		// response.Ack = true
 
+		topic := &Topic{
+			TopicName: request.Topic,
+			Partitions: []*Partition{},
+		}
+
+		errorCh := make(chan error, 1)
+		wg := sync.WaitGroup{}
+
 		var i uint8
 
 		for i = 0; i < request.Partitions; i++ {
+			wg.Add(1)
+			go func(i uint8) {
+				partition := &Partition{
+					TopicName:    request.Topic,
+					PartitionIdx: uint8(i),
+				}
 
-			partition := &Partition{
-				TopicName:    request.Topic,
-				PartitionIdx: uint8(i),
-			}
+				nodeIDs := getHashingNodes(partition.HashString(), int(request.ReplicaNum))
 
-			nodeIDs := getHashingNodes(partition.HashString(), int(request.ReplicaNum))
+				if len(nodeIDs) == 0 {
+					errorCh <- fmt.Errorf("Cannot assign any broker nodes")
+				}
+				var followerAddrMap = map[string]string{}
 
-			if len(nodeIDs) == 0 {
-				return fmt.Errorf("Cannot assign any broker nodes")
-			}
+				for _, v := range nodeIDs[1:] {
+					followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
+				}
+				request.PartitionIdx = i
+				request.IPs = followerAddrMap
+				leaderNodeID := BrokerNodeID(nodeIDs[0])
+				leaderAddr := manager.BrokerNodes[leaderNodeID]
 
-			fmt.Println("list of NodeIDs: ", nodeIDs)
+				defer func() {
+					if p := recover(); p != nil {
+						errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, fmt.Errorf("%v", p))
+					}
+				}()
+				defer wg.Done()
 
-			var followerAddrMap = map[string]string{}
+				rpcClient, err := vrpc.RPCDial("tcp", leaderAddr, logger, loggerOptions)
+				if err != nil {
+					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+				}
+				var ack bool
+				if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
+					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+				}
 
-			for _, v := range nodeIDs[1:] {
-				followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)].String()
-			}
+				partition.LeaderNodeID = leaderNodeID
+				partition.FollowerIPs = map[BrokerNodeID]string{}
 
-			fmt.Println("Follower Map: ", followerAddrMap)
+				for k, v := range followerAddrMap{
+					partition.FollowerIPs[BrokerNodeID(k)] = v
+				}
 
-			request.PartitionIdx = i
-			request.IPs = followerAddrMap
-
-			leaderNodeID := BrokerNodeID(nodeIDs[0])
-
-			rpcClient, err := vrpc.RPCDial("tcp", manager.BrokerNodes[leaderNodeID].String(), logger, loggerOptions)
-
-			if err != nil {
-				return fmt.Errorf("rpc createNewTopic: %v", err)
-			}
-
-			var ack bool
-
-			if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
-				return fmt.Errorf("rpc createNewTopic: %v", err)
-			}
-
-			//
-
-			// if err != nil{
-			// 	return err
-			// 	//TODO- Handle error
-			// }
-
-			// if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.StartLeReplicaNumader", msg, ){}
-
+				topic.Partitions = append(topic.Partitions, partition)
+			}(i)
 		}
 
-		// defer rpcClient.Close()
-		// if err != nil {
-		// 	return err
-		// }
-		// var ack bool
-		// err = rpcClient.Call("BrokerRPCServer.StartLeader", startLeaderMsg, &ack)
-		// if err != nil {
-		// 	return err
-		// }
+		c := make(chan struct{})
+		go func() {
+			defer close(c)
+			wg.Wait()
+		}()
 
-		// response.IPs = IPs
-		// response.ID = config.ManagerNodeID
-		// response.Role = m.MANAGER
-		// response.Timestamp = time.Now()
-		// response.Type = m.MANAGER_RESPONSE_TO_PROVIDER
+		select {
+		case err := <-errorCh:
+
+			//TODO Handle Broker Node connection failure
+			fmt.Println(err)
+			switch err.(type) {
+			case *TimeoutErr:
+			case *ConnectionErr:
+			default:
+			}
+			return err
+		case <-c:
+			fmt.Println("Done")
+		}
+
+		//Add to own and broadcast
+
 
 	}
 
@@ -1089,7 +1069,7 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 	return nil
 }
 
-func NewConnectionErr(nodeID ManagerNodeID, addr net.Addr, err error) *ConnectionErr {
+func NewConnectionErr(nodeID ManagerNodeID, addr string, err error) *ConnectionErr {
 	return &ConnectionErr{
 		Addr:   addr,
 		NodeID: nodeID,
@@ -1098,7 +1078,7 @@ func NewConnectionErr(nodeID ManagerNodeID, addr net.Addr, err error) *Connectio
 }
 
 func (e *ConnectionErr) Error() string {
-	return fmt.Sprintf("bad connection - %v - %v: %v", e.NodeID, e.Addr.String(), e.Err)
+	return fmt.Sprintf("bad connection - %v - %v: %v", e.NodeID, e.Addr, e.Err)
 }
 
 func NewTransactionErr(err error, msg string) *TransactionErr {
@@ -1152,7 +1132,7 @@ func (e *AbortErr) Error() string {
 	return fmt.Sprintf("abort error - %v", e.Err)
 }
 
-func NewTimeoutErr(nodeID ManagerNodeID, addr net.Addr, err error) *TimeoutErr {
+func NewTimeoutErr(nodeID ManagerNodeID, addr string, err error) *TimeoutErr {
 	return &TimeoutErr{
 		Addr:   addr,
 		NodeID: nodeID,
@@ -1161,7 +1141,7 @@ func NewTimeoutErr(nodeID ManagerNodeID, addr net.Addr, err error) *TimeoutErr {
 }
 
 func (e *TimeoutErr) Error() string {
-	return fmt.Sprintf("connection timed out - %v - %v: %v", e.NodeID, e.Addr.String(), e.Err)
+	return fmt.Sprintf("connection timed out - %v - %v: %v", e.NodeID, e.Addr, e.Err)
 }
 
 // func (t *Topic) Hash() [sha1.Size]byte {

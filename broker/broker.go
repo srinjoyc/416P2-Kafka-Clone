@@ -173,14 +173,7 @@ func spawnListener(addr string) {
 }
 
 func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) error {
-	*ack = true
-
-	fmt.Println("Create New Partition")
-
-	fmt.Println(message)
-
-	fmt.Println("\nLeader ID", config.BrokerNodeID)
-	fmt.Println("Leader Topic Name", message.Topic)
+	*ack = false
 
 	partition := &Partition{
 		TopicName:      message.Topic,
@@ -208,120 +201,14 @@ func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) e
 		// TODO handle retry on connection error
 	}
 
+	*ack = true
+
 	return nil
-
-	// var wg sync.WaitGroup
-	// errorCh := make(chan error, 1)
-
-	// for _, addr := range message.IPs {
-	// 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 		continue
-	// 	}
-
-	// 	wg.Add(1)
-	// 	go func(addr net.Addr) {
-	// 		defer func() {
-	// 			if p := recover(); p != nil {
-	// 				errorCh <- fmt.Errorf("bad connection - %v: %v", addr, p)
-	// 			}
-	// 		}()
-	// 		defer wg.Done()
-
-	// 		rpcClient, err := vrpc.RPCDial("tcp", tcpAddr.String(), logger, loggerOptions)
-	// 		defer rpcClient.Close()
-	// 		if err != nil {
-	// 			errorCh <- fmt.Errorf("bad connection - %v: %v", addr, err)
-	// 			return
-	// 		}
-	// 		var res NodeID
-	// 		if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.GetNodeID"), string(broker.brokerNodeID), &res); err != nil {
-	// 			errorCh <- fmt.Errorf("bad connection - %v: %v", addr, err)
-	// 			return
-	// 		}
-
-	// 		partition.Followers[NodeID(res)] = addr
-
-	// 	}(tcpAddr)
-
-	// }
-
-	// wg.Wait()
-
-	// topicID := TopicID(message.ID)
-
-	// if _, exist := broker.topicList[topicID]; exist {
-	// 	return fmt.Errorf("Topic ID has already existed")
-	// }
-
-	// followerMessage := &m.Message{
-	// 	Topic:      message.Topic,
-	// 	Type:       message.Type,
-	// 	Partition:  message.Partition,
-	// 	ReplicaNum: message.ReplicaNum,
-	// 	IPs:        message.IPs,
-	// }
-
-	// if err := brpc.threePC("AddTopic", followerMessage, topic.FollowerList); err!=nil{
-	// 	return err
-	// }
-
 }
 
-// func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) error {
-
-// 	client, err := vrpc.RPCDial("tcp", addr, logger, loggerOptions)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	var ack bool
-// 	println("broadcasting", addr)
-// 	if err := client.Call("BrokerRPCServer.StartFollower", message, &ack); err != nil {
-// 		return err
-// 	}
-
-// 	w.Done()
-
-// 	return nil
-// }
-
-// func (brpc *BrokerRPCServer) GetNodeID(srcNodeID NodeID, nodeID *NodeID) error {
-// 	*nodeID = broker.brokerNodeID
-// 	return nil
-// }
-
-// func (brpc *BrokerRPCServer) CommitAddPartition(message *m.Message, ack *bool) error {
-// 	fmt.Println("Start Follower")
-// 	fmt.Println("Topic:", message.Topic)
-
-// 	*ack = true
-// 	topic := &Partition{
-// 		TopicName:      message.Topic,
-// 		PartitionIdx:   message.Partition,
-// 		ReplicationNum: uint8(message.ReplicaNum),
-// 		Role:           Follower,
-// 	}
-
-// 	if _, exist := broker.topicList[TopicID(message.ID)]; exist {
-// 		*ack = false
-// 		return fmt.Errorf("Topic ID has already existed")
-// 	}
-
-// 	if message.Type == m.CREATE_NEW_TOPIC {
-// 		for i := 0; i < int(message.Partition); i++ {
-// 			filepostion := "./disk/broker_" + config.BrokerNodeID + "_" + message.Topic + "_" + strconv.Itoa(i)
-// 			// b.topicList[topic.topicID].Buffer[i] = []byte("")
-// 			IOlib.WriteFile(filepostion, "", false)
-// 		}
-// 	}
-
-// 	broker.topicList[TopicID(message.ID)] = topic
-
-// 	return nil
-// }
-
+	func (brpc *BrokerRPCServer) SubscribeClient(message *m.Message) error{
+		return nil
+	}
 
 // func (b *BrokerServer) AddClient(m *Message, res *bool) error {
 // 	topicId := m.Topic
@@ -820,7 +707,8 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 	}
 
 	broker.partitionMu.Lock()
-	broker.partitionMap[PartitionID(partition.HashString())] = partition
+	broker.partitionMap[PartitionID(fmt.Sprintf("%v_%v", partition.TopicName, partition.PartitionIdx))] = partition
+	// broker.partitionMap[PartitionID(partition.HashString())] = partition
 	broker.partitionMu.Unlock()
 
 	fmt.Println("Successfully Added Partition")
