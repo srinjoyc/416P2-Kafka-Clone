@@ -3,6 +3,7 @@ package main
 // This is a sample client cli program
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -26,6 +27,7 @@ var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
 
 // possible cmds that the shell can perform
+// TODO: later
 var cmds = map[string]func(){
 	"hello": func() {},
 }
@@ -181,6 +183,31 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	fmt.Printf("Success: %v\n", response.IPs)
 }
 
+func GetLeader(topic string, partitionNumber uint8) {
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	var response string
+	err = client.Call("ManagerRPCServer.GetLeader",
+		message.Message{
+			ID:           config.ProviderID,
+			Type:         message.GET_LEADER,
+			Topic:        topic,
+			Role:         message.PROVIDER,
+			Timestamp:    time.Now(),
+			PartitionIdx: partitionNumber,
+		},
+		&response)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Success: %v\n", response)
+}
+
 func main() {
 	// if os.Args[2] == "shell" {
 	// 	shell()
@@ -204,6 +231,17 @@ func main() {
 	// // send msg
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
+	shell()
+}
 
-	CreateNewTopic("QQQ", 3, 4)
+func shell() {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		cmd, _ := reader.ReadString('\n')
+		if cmd == "CreateNewTopic\n" {
+			CreateNewTopic("QQQ", 1, 2)
+		} else if cmd == "GetLeader\n" {
+			GetLeader("QQQ", 0)
+		}
+	}
 }
