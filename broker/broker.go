@@ -154,6 +154,7 @@ func spawnListener(addr string) {
 	server.Register(bRPC)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8000")
+	// tcpAddr, err := net.ResolveTCPAddr("tcp", config.BrokerIP)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
@@ -676,12 +677,10 @@ func (brpc *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAd
 		fmt.Println("Commit Phase Done")
 	}
 
-
 	// Local Commit
 	var ack bool
 
 	method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
-
 
 	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
 		brpc.abort(msg, peerAddrs)

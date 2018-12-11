@@ -543,9 +543,10 @@ func consumeAt(topic string, partitionNumber uint8, index int) {
 }
 
 func main() {
-	runShell()
-	//createNewTopic("CS", 2, 3)
-	//publishMessage("CS", 0, "hello")
+	// runShell()
+	// createNewTopic("CS", 2, 2)
+	// publishMessage("CS", 0, "hello")
+	consumeAt("CS", 0, 0)
 }
 
 func runShell() {

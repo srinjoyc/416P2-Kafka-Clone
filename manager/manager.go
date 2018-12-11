@@ -392,123 +392,17 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		response.Text = "At most " + strconv.Itoa(len(manager.BrokerNodes)) + " partitions"
 		return ErrInsufficientFreeNodes
 		// response.Ack = false
-	} else if _, v := manager.TopicMap[request.Topic]; v {
-		response.Text = "The topic " + request.Topic + "has been created"
-		return errors.New("More than one topic")
+		// } else if _, v := manager.TopicMap[request.Topic]; v {
+		// 	response.Text = "The topic " + request.Topic + "has been created"
+		// 	return errors.New("More than one topic")
 	} else {
-		// response.Ack = true
-		topic := &Topic{
-			TopicName:  request.Topic,
-			Partitions: []*Partition{},
-		}
 
-		errorCh := make(chan error, 1)
-		wg := sync.WaitGroup{}
-
-		var i uint8
-
-		for i = 0; i < request.Partitions; i++ {
-			wg.Add(1)
-			go func(j uint8) {
-
-				k := j
-
-				fmt.Println("Partitin ID: ", k)
-
-				partition := &Partition{
-					TopicName:    request.Topic,
-					PartitionIdx: uint8(j),
-				}
-
-				nodeIDs := getHashingNodes(partition.HashString(), int(request.ReplicaNum))
-
-				if len(nodeIDs) == 0 {
-					errorCh <- fmt.Errorf("Cannot assign any broker nodes")
-				}
-				var followerAddrMap = map[string]string{}
-
-				for _, v := range nodeIDs[1:] {
-					followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
-				}
-				request.PartitionIdx = j
-				request.IPs = followerAddrMap
-				leaderNodeID := BrokerNodeID(nodeIDs[0])
-				leaderAddr := manager.BrokerNodes[leaderNodeID]
-
-				println("-------------")
-				println("topic:", request.Topic)
-				println("LeaderIP:", nodeIDs[0])
-				fmt.Printf("FollowerIP: %v\n", nodeIDs[1:])
-				println("PartitionNum:", request.Partitions)
-				println("-------------")
-
-				defer func() {
-					if p := recover(); p != nil {
-						errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, fmt.Errorf("%v", p))
-					}
-				}()
-				defer wg.Done()
-
-				rpcClient, err := vrpc.RPCDial("tcp", leaderAddr, logger, loggerOptions)
-				if err != nil {
-					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
-				}
-				var ack bool
-				if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
-					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
-				}
-
-				partition.LeaderNodeID = leaderNodeID
-				partition.FollowerIPs = map[BrokerNodeID]string{}
-
-				for k, v := range followerAddrMap {
-					partition.FollowerIPs[BrokerNodeID(k)] = v
-				}
-
-				topic.Partitions = append(topic.Partitions, partition)
-
-				manager.TopicMap[request.Topic] = topic
-
-			}(i)
-		}
-
-		c := make(chan struct{})
-		go func() {
-			defer close(c)
-			wg.Wait()
-		}()
-
-		select {
-		case err := <-errorCh:
-			//TODOs:Handle Broker Node connection failure
-			fmt.Println(err)
-			switch err.(type) {
-			case *TimeoutErr:
-			case *ConnectionErr:
-			default:
-			}
-			return err
-		case <-c:
-			fmt.Println("Done")
-		}
-
-		data, err := json.Marshal(topic)
-
-		if err != nil {
-			return err
-		}
-
-		payloadMsg := &m.Message{
-			Payload:   data,
-			Proposer:  string(manager.ManagerNodeID),
-			Timestamp: time.Now(),
-		}
-
-		if err := mrpc.threePC("AddTopic", payloadMsg, manager.ManagerPeers); err != nil {
+		if err := mrpc.threePC("AddTopic", request, manager.ManagerPeers); err != nil {
 			fmt.Println(err)
 			// TODOs: Handle Error
 			return err
 		}
+
 	}
 
 	// printTopicMap()
@@ -1043,19 +937,104 @@ func (mrpc *ManagerRPCServer) CommitAddBrokerRPC(msg *m.Message, ack *bool) erro
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error {
+func (mrpc *ManagerRPCServer) CommitAddTopicRPC(request *m.Message, ack *bool) error {
 	*ack = false
-
-	var topic Topic
-
-	if err := json.Unmarshal(msg.Payload, &topic); err != nil {
-		fmt.Println(err)
-		return err
+	println("CommitAddTopicRPC...")
+	// response.Ack = true
+	topic := &Topic{
+		TopicName:  request.Topic,
+		Partitions: []*Partition{},
 	}
 
-	manager.TopicMutex.Lock()
-	manager.TopicMap[msg.Topic] = &topic
-	manager.TopicMutex.Unlock()
+	errorCh := make(chan error, 1)
+	wg := sync.WaitGroup{}
+
+	var i uint8
+
+	for i = 0; i < request.Partitions; i++ {
+		wg.Add(1)
+		go func(j uint8) {
+
+			k := j
+
+			fmt.Println("Partitin ID: ", k)
+
+			partition := &Partition{
+				TopicName:    request.Topic,
+				PartitionIdx: uint8(j),
+			}
+
+			nodeIDs := getHashingNodes(partition.HashString(), int(request.ReplicaNum))
+
+			if len(nodeIDs) == 0 {
+				errorCh <- fmt.Errorf("Cannot assign any broker nodes")
+			}
+			var followerAddrMap = map[string]string{}
+
+			for _, v := range nodeIDs[1:] {
+				followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
+			}
+			request.PartitionIdx = j
+			request.IPs = followerAddrMap
+			leaderNodeID := BrokerNodeID(nodeIDs[0])
+			leaderAddr := manager.BrokerNodes[leaderNodeID]
+
+			println("-------------")
+			println("topic:", request.Topic)
+			println("LeaderIP:", nodeIDs[0])
+			fmt.Printf("FollowerIP: %v\n", nodeIDs[1:])
+			println("PartitionNum:", request.Partitions)
+			println("-------------")
+
+			defer func() {
+				if p := recover(); p != nil {
+					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, fmt.Errorf("%v", p))
+				}
+			}()
+			defer wg.Done()
+
+			rpcClient, err := vrpc.RPCDial("tcp", leaderAddr, logger, loggerOptions)
+			if err != nil {
+				errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
+			}
+			var ack bool
+			if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
+				errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
+			}
+
+			partition.LeaderNodeID = leaderNodeID
+			partition.FollowerIPs = map[BrokerNodeID]string{}
+
+			for k, v := range followerAddrMap {
+				partition.FollowerIPs[BrokerNodeID(k)] = v
+			}
+
+			topic.Partitions = append(topic.Partitions, partition)
+
+			manager.TopicMap[request.Topic] = topic
+
+		}(i)
+	}
+
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+
+	select {
+	case err := <-errorCh:
+		//TODOs:Handle Broker Node connection failure
+		fmt.Println(err)
+		switch err.(type) {
+		case *TimeoutErr:
+		case *ConnectionErr:
+		default:
+		}
+		return err
+	case <-c:
+		fmt.Println("Done")
+	}
 
 	*ack = true
 	return nil
@@ -1112,6 +1091,7 @@ func spawnRPCServer() error {
 	server.Register(mRPC)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:9080")
+	// tcpAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
