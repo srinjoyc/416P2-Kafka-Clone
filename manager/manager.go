@@ -149,7 +149,6 @@ func Initialize(configFileName string) error {
 	if err := readConfigJSON(configFileName); err != nil {
 		return fmt.Errorf("initialize error: %v", err)
 	}
-	println("Manager", config.ManagerIP, "starts")
 
 	manager = &ManagerNode{
 		ManagerNodeID: ManagerNodeID(config.ManagerNodeID),
@@ -1092,9 +1091,9 @@ func spawnRPCServer() error {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
 
-	manager.ManagerIP = tcpAddr.String()
+	manager.ManagerIP = tcpAddr.IP.String()
 
-	fmt.Printf("Serving RPC Server at: %v\n", tcpAddr.String())
+	fmt.Printf("Serving RPC Server at: %v\n", manager.ManagerIP)
 	vrpc.ServeRPCConn(server, listener, logger, loggerOptions)
 
 	return nil
