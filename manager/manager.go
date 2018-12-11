@@ -834,37 +834,6 @@ func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error
 	return nil
 }
 
-// func (mrpc *ManagerRPCServer) CommitNewTopicRPC(msg *m.Message, ack *bool) error {
-// 	fmt.Println("CommitNewTopicRPC")
-// 	*ack = false
-// 	ProviderID := msg.ID
-// 	ProviderAddr, err := net.ResolveTCPAddr("tcp", msg.Text)
-
-// 	println("------------------------------")
-// 	fmt.Printf("%+v\n", msg)
-
-// 	if err != nil {
-// 		return err
-// 	}
-// 	var topicInfo Topic
-// 	if len(msg.IPs) > 1 {
-// 		topicInfo = Topic{LeaderIP: msg.IPs[0], FollowerIPs: msg.IPs[1:], PartitionNum: msg.Partition}
-// 	} else {
-// 		topicInfo = Topic{LeaderIP: msg.IPs[0], PartitionNum: msg.Partition}
-// 	}
-// 	println("------------------------------")
-// 	manager.TopicMutex.Lock()
-// 	manager.TopicMap[TopicID(msg.Topic)] = topicInfo
-// 	manager.TopicMutex.Unlock()
-
-// 	fmt.Printf("added topic - from provider %v - %v\n", ProviderID, ProviderAddr)
-// 	printTopicMap()
-
-// 	manager.TransactionCache.Add(msg.Hash(), COMMIT)
-// 	*ack = true
-// 	return nil
-// }
-
 /*----------------------------------------------------------------------------------------------------------------*/
 
 func spawnRPCServer() error {
@@ -1055,24 +1024,6 @@ func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) er
 	}
 	return nil
 }
-
-// //TODO:
-// func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, response *[]string) error {
-// 	println("Getting leader...")
-// 	if request.Type == m.TOPIC_LIST {
-// 		requestedTopic, ok := manager.TopicMap[request.Topic]
-// 		// not found topic name
-// 		if !ok {
-// 			*response = "No leader for that topic/partition."
-// 		}
-// 		partition := requestedTopic.Partitions[request.PartitionIdx]
-// 		leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
-// 		*response = leaderIP
-// 	} else {
-// 		*response = "No leader for that topic/partition."
-// 	}
-// 	return nil
-// }
 
 //TODO:
 func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, ack *bool) error { return nil }
