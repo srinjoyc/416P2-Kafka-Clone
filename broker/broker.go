@@ -850,4 +850,31 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 	}
 	return nil
 }
-func (mrpc *BrokerRPCServer) ConsumeMessage(request *m.Message, ack *bool) error { return nil }
+
+func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) error {
+	if request.Type == m.CONSUME_MESSAGE {
+		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
+		partition, ok := broker.partitionMap[indexID]
+		// not found topic or partition
+		if !ok {
+			response.Text = "Topic/Partition/Index not found"
+		}
+		println("Read from " + partition.TopicName)
+		// do stuff here to get the payload from disk
+		response.Payload = []byte("this would be the message")
+	}
+	return nil
+}
+
+func (mrpc *BrokerRPCServer) GetLatestIndex(request *m.Message, response *int) error {
+	if request.Type == m.GET_LATEST_INDEX {
+		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
+		_, ok := broker.partitionMap[indexID]
+		// not found topic or partition
+		if !ok {
+			*response = -1
+		}
+		*response = 5
+	}
+	return nil
+}
