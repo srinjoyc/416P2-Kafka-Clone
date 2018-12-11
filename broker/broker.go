@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	basicIO "../lib/IOlib"
 	m "../lib/message"
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
 	lru "github.com/hashicorp/golang-lru"
@@ -54,14 +55,14 @@ const (
 )
 
 type Partition struct {
-	TopicName      string
-	PartitionIdx   uint8
-	ReplicationNum uint8
-	Partitions     uint8
-	Role           ROLE
-	Buffer         []*record
-	LeaderIP       net.Addr
-	Followers      map[BrokerNodeID]net.Addr
+	TopicName       string
+	PartitionIdx    uint8
+	ReplicationNum  uint8
+	Partitions      uint8
+	Role            ROLE
+	Buffer          []*record
+	LeaderIP        net.Addr
+	Followers       map[BrokerNodeID]net.Addr
 	ClientOffsetMap map[ClientID]uint
 }
 
@@ -176,13 +177,13 @@ func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) e
 	*ack = false
 
 	partition := &Partition{
-		TopicName:      message.Topic,
-		PartitionIdx:   message.PartitionIdx,
-		ReplicationNum: uint8(message.ReplicaNum),
-		Partitions:     message.Partitions,
-		Role:           ROLE(message.Role),
-		LeaderIP:       broker.brokerAddr,
-		Followers:      make(map[BrokerNodeID]net.Addr),
+		TopicName:       message.Topic,
+		PartitionIdx:    message.PartitionIdx,
+		ReplicationNum:  uint8(message.ReplicaNum),
+		Partitions:      message.Partitions,
+		Role:            ROLE(message.Role),
+		LeaderIP:        broker.brokerAddr,
+		Followers:       make(map[BrokerNodeID]net.Addr),
 		ClientOffsetMap: make(map[ClientID]uint),
 	}
 
@@ -206,9 +207,9 @@ func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) e
 	return nil
 }
 
-	func (brpc *BrokerRPCServer) SubscribeClient(message *m.Message) error{
-		return nil
-	}
+func (brpc *BrokerRPCServer) SubscribeClient(message *m.Message) error {
+	return nil
+}
 
 // func (b *BrokerServer) AddClient(m *Message, res *bool) error {
 // 	topicId := m.Topic
@@ -696,6 +697,9 @@ func (brpc *BrokerRPCServer) AbortRPC(msg *m.Message, ack *bool) error {
 }
 
 func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack *bool) error {
+
+	println("******", message.PartitionIdx)
+
 	partition := &Partition{
 		TopicName:      message.Topic,
 		PartitionIdx:   message.PartitionIdx,
@@ -711,7 +715,13 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 	// broker.partitionMap[PartitionID(partition.HashString())] = partition
 	broker.partitionMu.Unlock()
 
-	fmt.Println("Successfully Added Partition")
+	fname := fmt.Sprintf("./disk/%v_%v_%v", config.BrokerNodeID, partition.TopicName, partition.PartitionIdx)
+	err := basicIO.WriteFile(fname, "", false)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Successfully Added Partition", fname)
 
 	*ack = true
 	return nil

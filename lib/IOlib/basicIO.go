@@ -41,20 +41,19 @@ Name: writeFile
 @ Return: None
 Func: write the string content into assigned path by method of overwriting or appending
 */
-func WriteFile(filePath string, content string, appendEnable bool) {
+func WriteFile(filePath string, content string, appendEnable bool) error {
 	if appendEnable == false {
 		f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
 		if err != nil {
-			log.Fatal(err)
-			return
+			return err
 		}
 		f.WriteString(content)
 	} else {
 		f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
 		if err != nil {
-			log.Fatal(err)
-			return
+			return err
 		}
 		f.WriteString(content)
 	}
+	return nil
 }

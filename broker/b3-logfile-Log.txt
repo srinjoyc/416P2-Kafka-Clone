@@ -1,6 +1,0 @@
-b3 {"b3":1}
-Initialization Complete
-b3 {"b3":2}
-Making RPC call
-b3 {"m2":27, "m3":21, "b1":2, "b3":3, "b2":2, "m1":53}
-Received RPC Call response from server

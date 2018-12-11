@@ -18,7 +18,6 @@ import (
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
-
 type configSetting struct {
 	ProviderID          string
 	KafkaManagerIPPorts string
@@ -159,7 +158,7 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
-	
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -171,9 +170,9 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 			Topic:      topic,
 			Role:       message.PROVIDER,
 			Timestamp:  time.Now(),
-			Partitions:  partitionNumber,
+			Partitions: partitionNumber,
 			ReplicaNum: replicaNum,
-			Proposer:	config.ProviderID,
+			Proposer:   config.ProviderID,
 		},
 		&response)
 	if err != nil {
@@ -209,5 +208,5 @@ func main() {
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
 
-	CreateNewTopic("CS", 1, 2)
+	CreateNewTopic("QQQ", 3, 4)
 }

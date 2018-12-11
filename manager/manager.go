@@ -922,9 +922,19 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 					followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
 				}
 				request.PartitionIdx = i
+
+				println("******", request.PartitionIdx)
+
 				request.IPs = followerAddrMap
 				leaderNodeID := BrokerNodeID(nodeIDs[0])
 				leaderAddr := manager.BrokerNodes[leaderNodeID]
+
+				println("-------------")
+				println("topic:", request.Topic)
+				println("LeaderIP:", nodeIDs[0])
+				fmt.Printf("FollowerIP: %v\n", nodeIDs[1:])
+				println("PartitionNum:", request.Partitions)
+				println("-------------")
 
 				defer func() {
 					if p := recover(); p != nil {
@@ -950,6 +960,9 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 				}
 
 				topic.Partitions = append(topic.Partitions, partition)
+
+				manager.TopicMap[request.Topic] = *topic
+
 			}(i)
 		}
 
