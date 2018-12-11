@@ -110,6 +110,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
@@ -124,7 +125,7 @@ import (
 
 type configSetting struct {
 	ProviderID          string
-	KafkaManagerIPPorts string
+	KafkaManagerIPPorts []string
 }
 
 var config configSetting
@@ -132,7 +133,7 @@ var config configSetting
 // reads from config before booting 'shell'
 func init() {
 	readConfigJSON(os.Args[1])
-	createNewTopic("test", 2, 2)
+	// createNewTopic("test", 2, 2)
 }
 
 /* readConfigJSON
@@ -277,12 +278,23 @@ func tryAndGetLeaderIP(topic string, partitionNumber uint8) {
 	}
 }
 
+func tryManagers() (*rpc.Client, error) {
+	for _, manager := range config.KafkaManagerIPPorts {
+		logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+		loggerOptions = govec.GetDefaultLogOptions()
+		client, err := vrpc.RPCDial("tcp", manager, logger, loggerOptions)
+		if err != nil {
+			continue
+		}
+		return client, nil
+	}
+	return nil, errors.New("Couldnt connect to any manager")
+}
+
 func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
-	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
-	loggerOptions = govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	client, err := tryManagers()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 
 	var response message.Message
@@ -314,11 +326,9 @@ func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 }
 
 func getLeader(topic string, partitionNumber uint8, verbose bool) {
-	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
-	loggerOptions = govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	client, err := tryManagers()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 
 	var response string
@@ -343,11 +353,9 @@ func getLeader(topic string, partitionNumber uint8, verbose bool) {
 }
 
 func getTopicList() {
-	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
-	loggerOptions = govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	client, err := tryManagers()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 
 	var response map[string]uint8
@@ -382,7 +390,10 @@ func publishMessage(topic string, partitionNumber uint8, text string) {
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
 	if err != nil {
-		log.Fatal(err)
+		// need to try a new leader
+		getLeader(topic, partitionNumber, false)
+		publishMessage(topic, partitionNumber, text)
+		return
 	}
 
 	var response string
@@ -412,7 +423,9 @@ func subscribe(topic string, partitionNumber uint8) {
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
 	if err != nil {
-		log.Fatal(err)
+		getLeader(topic, partitionNumber, false)
+		subscribe(topic, partitionNumber)
+		return
 	}
 
 	var latestIndex int
@@ -447,8 +460,9 @@ func subscribe(topic string, partitionNumber uint8) {
 				},
 				&response)
 			if err != nil {
-				fmt.Printf("Failed to consume data from index %d\n", latestIndex)
-				continue
+				getLeader(topic, partitionNumber, false)
+				subscribe(topic, partitionNumber)
+				return
 			}
 			fmt.Println(string(response.Payload))
 			latestIndex++
@@ -463,7 +477,9 @@ func consumeAt(topic string, partitionNumber uint8, index int) {
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
 	if err != nil {
-		log.Fatal(err)
+		getLeader(topic, partitionNumber, false)
+		consumeAt(topic, partitionNumber, index)
+		return
 	}
 	var response message.Message
 	err = client.Call("BrokerRPCServer.ConsumeAt",
