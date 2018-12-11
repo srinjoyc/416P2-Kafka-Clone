@@ -416,8 +416,11 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		for i = 0; i < request.Partitions; i++ {
 			wg.Add(1)
 			go func(j uint8) {
+
 				k := j
-				fmt.Println(k)
+
+				fmt.Println("Partitin ID: ", k)
+
 				partition := &Partition{
 					TopicName:    request.Topic,
 					PartitionIdx: uint8(j),
@@ -658,11 +661,11 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	errorCh := make(chan error, 1)
 	manager.ManagerMutex.Lock()
 
-	fmt.Println(msg)
+	// fmt.Println(msg)
 
-	fmt.Println("Break 1")
+	// fmt.Println("Break 1")
 	
-	fmt.Println("Break 2")
+	// fmt.Println("Break 2")
 
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
@@ -677,45 +680,45 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 			}()
 			defer wg.Done()
 
-			fmt.Println(manID, "Break 1")
+			// fmt.Println(manID, "Break 1")
 
 			rpcClient, err := vrpc.RPCDial("tcp", manAddr, logger, loggerOptions)
 			defer rpcClient.Close()
 
-			fmt.Println(manID, "Break 2")
+			// fmt.Println(manID, "Break 2")
 
 			if err != nil {
 				errorCh <- NewConnectionErr(manID, manAddr, err)
 				return
 			}
 
-			fmt.Println(manID, "Break 3")
+			// fmt.Println(manID, "Break 3")
 
 			var s State
 			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommitRPC"), msg, &s); err != nil {
-				fmt.Println(manID, "Break 6")
+				// fmt.Println(manID, "Break 6")
 				switch err.(type) {
 				case *RPCTimedout:
-					fmt.Println(manID, "Break 7")
+					// fmt.Println(manID, "Break 7")
 					errorCh <- NewTimeoutErr(manID, manAddr, err)
 				default:
-					fmt.Println(manID, "Break 8")
+					// fmt.Println(manID, "Break 8")
 					errorCh <- NewConnectionErr(manID, manAddr, err)
 				}
 				return
 			}
 
-			fmt.Println(manID, "Break 4")
+			// fmt.Println(manID, "Break 4")
 
 			peerTransactionState[manID] = s
 
-			fmt.Println(manID, "Break 5")
+			// fmt.Println(manID, "Break 5")
 		}(managerID, managerPeer)
 	}
 
 	manager.TransactionCache.Add(msg.Hash(), WAIT)
 
-	fmt.Println("Break 3")
+	// fmt.Println("Break 3")
 
 	c := make(chan struct{})
 
@@ -724,7 +727,7 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 		wg.Wait()
 	}()
 
-	fmt.Println("Break 4")
+	// fmt.Println("Break 4")
 
 	select {
 	case err := <-errorCh:
@@ -738,11 +741,11 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 		fmt.Println("CanCommitPhase Done")
 	}
 
-	fmt.Println("Break 5")
+	// fmt.Println("Break 5")
 
 	manager.ManagerMutex.Unlock()
 
-	fmt.Println("Break 6")
+	// fmt.Println("Break 6")
 
 	// Local canCommit
 	method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("CanCommitRPC"))
