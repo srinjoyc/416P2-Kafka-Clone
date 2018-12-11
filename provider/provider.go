@@ -377,7 +377,6 @@ func subscribe(topic string, partitionNumber uint8) {
 		return
 	}
 
-	// TODO: verify with srinjoy
 	go func() {
 		for {
 			var response message.Message
@@ -462,8 +461,7 @@ func main() {
 
 func runShell() {
 	// start our "shell" in a polling loop
-	fmt.Printf(`
-Hi! Possible commands:
+	fmt.Printf(`Hi! Possible commands:
 
 	> CreateNewTopic <topicName> <numPartitions> <numReplicas>
 	> GetTopicList
