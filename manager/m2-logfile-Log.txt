@@ -12,13 +12,13 @@ m2 {"m2":6, "m1":7, "b1":2}
 Received RPC request
 m2 {"m2":7, "m1":7, "b1":2}
 Sending response to RPC request
-m2 {"b1":2, "m2":8, "m1":9}
+m2 {"m2":8, "m1":9, "b1":2}
 Received RPC request
 m2 {"m2":9, "m1":9, "b1":2}
 Sending response to RPC request
 m2 {"m2":10, "m1":13, "b1":2, "b2":2}
 Received RPC request
-m2 {"b1":2, "b2":2, "m2":11, "m1":13}
+m2 {"m1":13, "b1":2, "b2":2, "m2":11}
 Sending response to RPC request
 m2 {"m1":15, "b1":2, "b2":2, "m2":12}
 Received RPC request
@@ -26,17 +26,29 @@ m2 {"m2":13, "m1":15, "b1":2, "b2":2}
 Sending response to RPC request
 m2 {"m2":14, "m1":17, "b1":2, "b2":2}
 Received RPC request
-m2 {"b2":2, "m2":15, "m1":17, "b1":2}
+m2 {"m2":15, "m1":17, "b1":2, "b2":2}
 Sending response to RPC request
-m2 {"m1":21, "b1":2, "b2":2, "b3":2, "m2":16}
+m2 {"b1":2, "b2":2, "b3":2, "m2":16, "m1":21}
 Received RPC request
-m2 {"m2":17, "m1":21, "b1":2, "b2":2, "b3":2}
+m2 {"b2":2, "b3":2, "m2":17, "m1":21, "b1":2}
 Sending response to RPC request
-m2 {"m2":18, "m1":23, "b1":2, "b2":2, "b3":2}
+m2 {"m1":23, "b1":2, "b2":2, "b3":2, "m2":18}
 Received RPC request
 m2 {"m2":19, "m1":23, "b1":2, "b2":2, "b3":2}
 Sending response to RPC request
 m2 {"m2":20, "m1":25, "b1":2, "b2":2, "b3":2}
 Received RPC request
-m2 {"m2":21, "m1":25, "b1":2, "b2":2, "b3":2}
+m2 {"m1":25, "b1":2, "b2":2, "b3":2, "m2":21}
+Sending response to RPC request
+m2 {"b3":2, "client":2, "m2":22, "m1":31, "b1":9, "b2":11}
+Received RPC request
+m2 {"m2":23, "m1":31, "b1":9, "b2":11, "b3":2, "client":2}
+Sending response to RPC request
+m2 {"b3":2, "client":2, "m2":24, "m1":33, "b1":9, "b2":11}
+Received RPC request
+m2 {"m1":33, "b1":9, "b2":11, "b3":2, "client":2, "m2":25}
+Sending response to RPC request
+m2 {"m2":26, "m1":35, "b1":9, "b2":11, "b3":2, "client":2}
+Received RPC request
+m2 {"b3":2, "client":2, "m2":27, "m1":35, "b1":9, "b2":11}
 Sending response to RPC request

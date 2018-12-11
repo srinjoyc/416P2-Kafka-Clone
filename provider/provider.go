@@ -197,7 +197,8 @@ var cmds = map[string]func(...string) error{
 		// message text should be third arg
 		text := args[2]
 
-		publishMessage(topic, uint8(partitionNum), text)
+		// TODO: get real IP
+		publishMessage(topic, uint8(partitionNum), text, "fakeIP")
 		return
 	},
 	"Subscribe": func(args ...string) (err error) {
@@ -277,20 +278,21 @@ func getTopicList() {
 	return
 }
 
-func publishMessage(topic string, partitionNumber uint8, text string) {
+func publishMessage(topic string, partitionNumber uint8, text string, leaderIP string) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
+
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	var response string
-	err = client.Call("ManagerRPCServer.GetLeader",
+	err = client.Call("BrokerRPCServer.PublishMessage",
 		message.Message{
 			ID:           config.ProviderID,
-			Type:         message.GET_LEADER,
+			Type:         message.PUSHMESSAGE,
 			Topic:        topic,
+			Text:         text,
 			Role:         message.PROVIDER,
 			Timestamp:    time.Now(),
 			PartitionIdx: partitionNumber,
@@ -310,8 +312,8 @@ func consumeAt(topic string, partitionNumber uint8, index uint8) {
 	return
 }
 
-// getLeader is a helper
-func getLeader(topic string, partitionNumber uint8) {
+// helper
+func getLeader(topic string, partitionNumber uint8) (leaderIP string) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -333,34 +335,12 @@ func getLeader(topic string, partitionNumber uint8) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	fmt.Printf("Success: %v\n", response)
+	return
 }
 
 func main() {
 	runShell()
-	// if os.Args[2] == "shell" {
-	// 	shell()
-	// } else if os.Args[2] == "createtopic" {
-	// 	if len(os.Args) != 4 {
-	// 		println("Incorrect Format: go run provider.go [config] createtopic [topic]")
-	// 		return
-	// 	}
-	// 	createTopicInKafka(os.Args[3])
-	// } else if os.Args[2] == "appendmessage" {
-	// 	if len(os.Args) != 6 {
-	// 		println("Incorrect Format: go run provider.go [config] appendmessage [topic] [partition] [message]")
-	// 		return
-	// 	}
-
-	// 	//provideMsgToKafka(topic, partition, message)
-	// }
-
-	// topic := os.Args[3]
-	// argMsg := os.Args[5]
-	// // send msg
-	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
-	// provideMsg(config.KafkaManagerIPPorts[0], msg)
 }
 
 func runShell() {
