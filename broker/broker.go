@@ -291,7 +291,7 @@ func (brpc *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerA
 
 	// recovery if needed
 	if peerTransactionState != nil {
-		var recoverPeerAddr map[BrokerNodeID]net.Addr
+		var recoverPeerAddr = map[BrokerNodeID]net.Addr{}
 		for k, v := range peerTransactionState {
 			if v != COMMIT {
 				recoverPeerAddr[k] = peerAddrs[k]
@@ -427,9 +427,7 @@ func (brpc *BrokerRPCServer) canCommit(serviceMethod string, msg *m.Message, pee
 				}
 				return
 			}
-
 			peerTransactionState[brokerID] = s
-
 		}(brokerID, brokerAddr)
 	}
 
@@ -602,7 +600,6 @@ func (brpc *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAd
 	}
 
 	// Local Commit
-
 	var ack bool
 	method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
 
@@ -645,9 +642,7 @@ func (brpc *BrokerRPCServer) abort(msg *m.Message, peerAddrs map[BrokerNodeID]ne
 			}
 		}(brokerID, brokerAddr)
 	}
-
 	wg.Wait()
-
 	fmt.Println("Abort Done")
 }
 
@@ -738,7 +733,7 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 		if doneCall.Error != nil {
 			return doneCall.Error
 		}
-	case <-time.After(time.Duration(3) * time.Second):
+	case <-time.After(time.Duration(100) * time.Second):
 		return NewRPCTimedout(rpcCall.ServiceMethod)
 	}
 	return nil

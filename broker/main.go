@@ -64,7 +64,6 @@ func Initialize() error {
 	loggerOptions = govec.GetDefaultLogOptions()
 
 	fmt.Println(config.BrokerIP)
-
 	return nil
 }
 
@@ -83,21 +82,16 @@ func registerBrokerWithManager() error {
 	if err != nil {
 		return err
 	}
-
 	message := m.Message{
 		ID:        config.BrokerNodeID,
 		Text:      config.BrokerIP,
 		Timestamp: time.Now(),
 	}
-
 	var ack bool
-
 	if err := rpcClient.Call("ManagerRPCServer.AddBroker", message, &ack); err != nil {
 		return err
 	}
-
 	return nil
-
 }
 
 func main() {
