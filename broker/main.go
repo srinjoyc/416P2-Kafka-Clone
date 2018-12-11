@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -72,25 +73,35 @@ func registerBrokerWithManager() error {
 	fmt.Println("ManagerIP", config.ManagerIP)
 
 	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
-
-	if err != nil {
-		return err
-	}
+	checkError(err)
 
 	rpcClient, err := vrpc.RPCDial("tcp", managerAddr.String(), logger, loggerOptions)
 	defer rpcClient.Close()
-	if err != nil {
-		return err
-	}
+	checkError(err)
+
 	message := m.Message{
 		ID:        config.BrokerNodeID,
 		Text:      config.BrokerIP,
 		Timestamp: time.Now(),
 	}
-	var ack bool
-	if err := rpcClient.Call("ManagerRPCServer.AddBroker", message, &ack); err != nil {
-		return err
+	var response m.Message
+	rpcClient.Call("ManagerRPCServer.AddBroker", message, &response)
+	checkError(err)
+
+	for k, v := range response.IPs{
+		if BrokerNodeID(k) == broker.brokerNodeID{
+			continue
+		}
+
+		broker.brokerPeers[BrokerNodeID(k)] = v
 	}
+
+	fmt.Println("Broker List")
+
+	managerIPs := strings.Split(response.Text, ",")
+
+	broker.ManagerIPs = managerIPs
+
 	return nil
 }
 
@@ -108,8 +119,6 @@ func main() {
 
 	err = InitBroker(config.BrokerIP)
 	checkError(err)
-
-	
 }
 
 func checkError(err error) {
@@ -128,7 +137,23 @@ func shell() {
 		if cmd == "partition\n" {
 			fmt.Println("Here's partition")
 			fmt.Printf("%v\n", broker.partitionMap)
+		}else if cmd == "managers\n" {
+			for _, v := range broker.ManagerIPs{
+				fmt.Println(v)
+			}
+		}else if cmd == "broker\n" {
+			for k, v := range broker.brokerPeers{
+				fmt.Println(k,v)
+			}
 		}
+		
+		// if cmd == "report\n" {
+		// 	fmt.Println("127.0.0.1:3001 reported")
+		// 	err := reportNodeFailure("127.0.0.1:3001")
+		// 	if err != nil {
+		// 		println(err.Error)
+		// 	}
+		// }
 		// } else if cmd == "ring\n" {
 
 		// 	server, _ := ring.GetNode("my_key")
