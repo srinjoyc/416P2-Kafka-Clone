@@ -358,7 +358,9 @@ Hi! Possible commands:
 	reader := bufio.NewReader(os.Stdin)
 	for {
 
+		// display prompt
 		fmt.Printf("> ")
+
 		// read the entire string user typed
 		fullCmd, err := reader.ReadString('\n')
 		if err != nil {
@@ -368,10 +370,13 @@ Hi! Possible commands:
 
 		// trim off trailing newline
 		fullCmd = fullCmd[:len(fullCmd)-1]
+		if fullCmd == "" {
+			continue
+		}
 
 		// seperate string by spaces so we can parse arguments
 		seperated := strings.Split(fullCmd, " ")
-		if len(seperated) < 2 {
+		if len(seperated) < 2 && seperated[0] != "GetTopicList" {
 			fmt.Println("invalid command")
 			continue
 		}
