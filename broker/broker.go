@@ -55,15 +55,17 @@ const (
 )
 
 type Partition struct {
-	TopicName       string
-	PartitionIdx    uint8
-	ReplicationNum  uint8
-	Partitions      uint8
-	Role            ROLE
-	Buffer          []*record
-	LeaderIP        net.Addr
-	Followers       map[BrokerNodeID]net.Addr
-	ClientOffsetMap map[ClientID]uint
+	TopicName        string
+	PartitionIdx     uint8
+	ReplicationNum   uint8
+	Partitions       uint8
+	Role             ROLE
+	contentMu        *sync.Mutex
+	Contents         []string
+	LastContentIndex int
+	LeaderIP         net.Addr
+	Followers        map[BrokerNodeID]net.Addr
+	ClientOffsetMap  map[ClientID]uint
 }
 
 type BrokerNode struct {
@@ -682,11 +684,23 @@ func (brpc *BrokerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 
 func (brpc *BrokerRPCServer) CommitPublishMessageRPC(msg *m.Message, ack *bool) error {
 	*ack = true
+	// zero-copy write
 	fname := fmt.Sprintf("./disk/%v_%v_%v", config.BrokerNodeID, msg.Topic, msg.PartitionIdx)
 	err := basicIO.WriteFile(fname, msg.Text, true)
 	if err != nil {
 		return err
 	}
+	indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
+	partition, ok := broker.partitionMap[indexID]
+	// not found topic or partition
+	if !ok {
+		*ack = false
+		return nil
+	}
+	partition.contentMu.Lock()
+	partition.LastContentIndex++
+	partition.Contents[partition.LastContentIndex] = msg.Text
+	partition.contentMu.Unlock()
 	println("Message Comitted")
 	return nil
 }
@@ -709,13 +723,16 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 	println("******", message.PartitionIdx)
 
 	partition := &Partition{
-		TopicName:      message.Topic,
-		PartitionIdx:   message.PartitionIdx,
-		ReplicationNum: uint8(message.ReplicaNum),
-		Partitions:     message.Partitions,
-		Role:           ROLE(message.Role),
-		LeaderIP:       broker.brokerAddr,
-		Followers:      make(map[BrokerNodeID]net.Addr),
+		TopicName:        message.Topic,
+		PartitionIdx:     message.PartitionIdx,
+		ReplicationNum:   uint8(message.ReplicaNum),
+		Partitions:       message.Partitions,
+		Role:             ROLE(message.Role),
+		LeaderIP:         broker.brokerAddr,
+		Followers:        make(map[BrokerNodeID]net.Addr),
+		Contents:         make([]string, 100),
+		contentMu:        &sync.Mutex{},
+		LastContentIndex: -1,
 	}
 
 	broker.partitionMu.Lock()
@@ -852,13 +869,6 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 		indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
 		println(indexID)
 		partition, ok := broker.partitionMap[indexID]
-
-		println(".............")
-		for key, v := range broker.partitionMap {
-			fmt.Printf("id: %v,follow %+v\n", key, v)
-		}
-		println(".............")
-
 		// not found topic or partition
 		if !ok {
 			*ack = false
@@ -878,12 +888,16 @@ func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) 
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
 		partition, ok := broker.partitionMap[indexID]
 		// not found topic or partition
-		if !ok {
+		if !ok || request.Index > partition.LastContentIndex {
+			response.Index = partition.LastContentIndex
 			response.Text = "Topic/Partition/Index not found"
+			return nil
 		}
+		response.Index = partition.LastContentIndex
+		//fileName := basicIO.Sendfile(,config.BrokerNodeID + "_" + indexID)
 		println("Read from " + partition.TopicName)
 		// do stuff here to get the payload from disk
-		response.Payload = []byte("this would be the message")
+		response.Payload = []byte(partition.Contents[request.Index])
 	}
 	return nil
 }
@@ -891,12 +905,14 @@ func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) 
 func (mrpc *BrokerRPCServer) GetLatestIndex(request *m.Message, response *int) error {
 	if request.Type == m.GET_LATEST_INDEX {
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
-		_, ok := broker.partitionMap[indexID]
+		partition, ok := broker.partitionMap[indexID]
 		// not found topic or partition
 		if !ok {
 			*response = -1
+			return nil
 		}
-		*response = 5
+		println(partition.LastContentIndex)
+		*response = partition.LastContentIndex
 	}
 	return nil
 }

@@ -450,8 +450,11 @@ func subscribe(topic string, partitionNumber uint8) {
 				fmt.Printf("Failed to consume data from index %d\n", latestIndex)
 				continue
 			}
-			fmt.Println(string(response.Payload))
-			latestIndex++
+			fmt.Println(string(response.Text))
+			if response.Index > latestIndex {
+				latestIndex++
+			}
+			time.Sleep(3000)
 		}
 	}()
 }
@@ -485,9 +488,9 @@ func consumeAt(topic string, partitionNumber uint8, index int) {
 }
 
 func main() {
-	// runShell()
-	createNewTopic("CS", 2, 3)
-	publishMessage("CS", 0, "hello")
+	runShell()
+	//createNewTopic("CS", 2, 3)
+	//publishMessage("CS", 0, "hello")
 }
 
 func runShell() {
