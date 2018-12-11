@@ -99,7 +99,7 @@ type Partition struct {
 	TopicName    string
 	PartitionIdx uint8
 	LeaderNodeID BrokerNodeID
-	FollowerIPs	map[BrokerNodeID]string
+	FollowerIPs  map[BrokerNodeID]string
 }
 
 type Topic struct {
@@ -894,7 +894,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		// response.Ack = true
 
 		topic := &Topic{
-			TopicName: request.Topic,
+			TopicName:  request.Topic,
 			Partitions: []*Partition{},
 		}
 
@@ -922,9 +922,19 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 					followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
 				}
 				request.PartitionIdx = i
+
+				println("******", request.PartitionIdx)
+
 				request.IPs = followerAddrMap
 				leaderNodeID := BrokerNodeID(nodeIDs[0])
 				leaderAddr := manager.BrokerNodes[leaderNodeID]
+
+				println("-------------")
+				println("topic:", request.Topic)
+				println("LeaderIP:", nodeIDs[0])
+				fmt.Printf("FollowerIP: %v\n", nodeIDs[1:])
+				println("PartitionNum:", request.Partitions)
+				println("-------------")
 
 				defer func() {
 					if p := recover(); p != nil {
@@ -935,21 +945,24 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 				rpcClient, err := vrpc.RPCDial("tcp", leaderAddr, logger, loggerOptions)
 				if err != nil {
-					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
 				}
 				var ack bool
 				if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
-					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
 				}
 
 				partition.LeaderNodeID = leaderNodeID
 				partition.FollowerIPs = map[BrokerNodeID]string{}
 
-				for k, v := range followerAddrMap{
+				for k, v := range followerAddrMap {
 					partition.FollowerIPs[BrokerNodeID(k)] = v
 				}
 
 				topic.Partitions = append(topic.Partitions, partition)
+
+				manager.TopicMap[request.Topic] = *topic
+
 			}(i)
 		}
 
@@ -975,7 +988,6 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		}
 
 		//Add to own and broadcast
-
 
 	}
 
