@@ -70,7 +70,7 @@ type ManagerNode struct {
 	ManagerNodeID    ManagerNodeID
 	ManagerPeers     map[ManagerNodeID]string
 	ManagerIP        string
-	TopicMap         map[string]Topic
+	TopicMap         map[string]*Topic
 	BrokerNodes      map[BrokerNodeID]string
 	TopicMutex       *sync.Mutex
 	ManagerMutex     *sync.Mutex
@@ -152,7 +152,7 @@ func Initialize(configFileName string) error {
 
 	manager = &ManagerNode{
 		ManagerNodeID: ManagerNodeID(config.ManagerNodeID),
-		TopicMap:      make(map[string]Topic),
+		TopicMap:      make(map[string]*Topic),
 		ManagerPeers:  make(map[ManagerNodeID]string),
 		BrokerNodes:   make(map[BrokerNodeID]string),
 		TopicMutex:    &sync.Mutex{},
@@ -473,7 +473,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 				topic.Partitions = append(topic.Partitions, partition)
 
-				manager.TopicMap[request.Topic] = *topic
+				manager.TopicMap[request.Topic] = topic
 
 			}(i)
 		}
@@ -1225,7 +1225,12 @@ func shell() {
 			fmt.Printf("%v\n", server)
 		} else if cmd == "topicmap\n" {
 			for k, v := range manager.TopicMap{
-				fmt.Println(k, v)
+				fmt.Println(k, v.TopicName)
+
+				for _, j := range v.Partitions {
+					fmt.Println("idx: ", j.PartitionIdx, "leader: ", j.LeaderNodeID)
+				}
+				
 			}
 		} else if cmd == "peer\n" {
 			fmt.Println(manager.ManagerPeers)
@@ -1339,18 +1344,6 @@ func (e *TimeoutErr) Error() string {
 	return fmt.Sprintf("connection timed out - %v - %v: %v", e.NodeID, e.Addr, e.Err)
 }
 
-// func (t *Topic) Hash() [sha1.Size]byte {
-// 	var buf = []byte{}
-// 	for _, partition := range t {
-// 		buf = append(buf, []byte(strconv.FormatUint(uint64(partition.PartitionIdx), 10))...)
-// 		buf = append(buf, []byte(Partition.LeaderIP)...)
-
-// 		for _, ip := range partition.FollowerIPs {
-// 			buf = append(buf, []byte(ip)...)
-// 		}
-// 	}
-// 	return sha1.Sum(buf)
-// }
 
 func (p *Partition) HashString() string {
 	var buf = []byte{}
