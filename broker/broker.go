@@ -153,7 +153,7 @@ func spawnListener(addr string) {
 	server := rpc.NewServer()
 	server.Register(bRPC)
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8000")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
