@@ -5,9 +5,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"../lib/IOlib"
@@ -25,11 +28,49 @@ type configSetting struct {
 var config configSetting
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
+var errInvalidArgs = errors.New("invalid arguments")
 
 // possible cmds that the shell can perform
-// TODO: later
-var cmds = map[string]func(){
-	"hello": func() {},
+var cmds = map[string]func(...string) error{
+	"CreateNewTopic": func(args ...string) (err error) {
+		if len(args) != 3 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// num partitions should be second arg
+		numPartitions, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		// num replicas should be third arg
+		numReplicas, err := strconv.Atoi(args[2])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		createNewTopic(topic, uint8(numPartitions), numReplicas)
+		return nil
+	},
+	"GetLeader": func(args ...string) error {
+		if len(args) != 2 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// partition number should be second arg
+		partitionNum, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+		getLeader(topic, uint8(partitionNum))
+		return nil
+	},
 }
 
 /* readConfigJSON
@@ -155,7 +196,7 @@ func init() {
 // 	}
 // }
 
-func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
+func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -183,7 +224,7 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	fmt.Printf("Success: %v\n", response.IPs)
 }
 
-func GetLeader(topic string, partitionNumber uint8) {
+func getLeader(topic string, partitionNumber uint8) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -209,6 +250,7 @@ func GetLeader(topic string, partitionNumber uint8) {
 }
 
 func main() {
+	runShell()
 	// if os.Args[2] == "shell" {
 	// 	shell()
 	// } else if os.Args[2] == "createtopic" {
@@ -231,17 +273,40 @@ func main() {
 	// // send msg
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
-	shell()
 }
 
-func shell() {
+func runShell() {
+	// start our "shell" in a polling loop
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		cmd, _ := reader.ReadString('\n')
-		if cmd == "CreateNewTopic\n" {
-			CreateNewTopic("QQQ", 1, 2)
-		} else if cmd == "GetLeader\n" {
-			GetLeader("QQQ", 0)
+
+		// read the entire string user typed
+		fullCmd, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		// trim off trailing newline
+		fullCmd = fullCmd[:len(fullCmd)-1]
+
+		// seperate string by spaces so we can parse arguments
+		seperated := strings.Split(fullCmd, " ")
+		if len(seperated) < 2 {
+			fmt.Println("invalid command")
+			continue
+		}
+
+		// handle the command with provided arguments
+		cmd, args := seperated[0], seperated[1:]
+		if cmdHandler, ok := cmds[cmd]; ok {
+			if err := cmdHandler(args...); err != nil {
+				fmt.Println(err)
+				continue
+			}
+		} else {
+			fmt.Println("invalid command")
+			continue
 		}
 	}
 }
