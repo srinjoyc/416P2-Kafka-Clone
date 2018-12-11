@@ -816,12 +816,12 @@ func (mrpc *ManagerRPCServer) GetManagerRPC(nodeID ManagerNodeID, node *ManagerN
 	return nil
 }
 
-func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error{
+func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 
 	var topic Topic
 
-	if err := json.Unmarshal(msg.Payload, &topic); err!=nil{
+	if err := json.Unmarshal(msg.Payload, &topic); err != nil {
 		fmt.Println(err)
 		return err
 	}
@@ -898,7 +898,6 @@ func (mrpc *ManagerRPCServer) Ack(addr string, ack *bool) error {
 }
 
 func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Message) error {
-	fmt.Println("RecivedCreatedTopic")
 
 	if int(request.ReplicaNum) > len(manager.BrokerNodes) {
 		response.Text = "At most " + strconv.Itoa(len(manager.BrokerNodes)) + " partitions"
@@ -919,7 +918,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		wg := sync.WaitGroup{}
 
 		var i uint8
-
+		response.IPs = make(map[string]string)
 		for i = 0; i < request.Partitions; i++ {
 			wg.Add(1)
 			go func(j uint8) {
@@ -978,12 +977,13 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 				topic.Partitions = append(topic.Partitions, partition)
 
 				manager.TopicMap[request.Topic] = *topic
+				strIdx := strconv.FormatUint(uint64(partition.PartitionIdx), 10)
+				fmt.Println(strIdx)
+				leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
+				response.IPs[strIdx] = leaderIP
 
 			}(i)
 		}
-
-
-
 
 		c := make(chan struct{})
 		go func() {
@@ -1007,7 +1007,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 		data, err := json.Marshal(topic)
 
-		if err != nil{
+		if err != nil {
 			return err
 		}
 
@@ -1017,15 +1017,11 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 			Timestamp: time.Now(),
 		}
 
-		
-		if err := mrpc.threePC("AddTopic", payloadMsg, manager.ManagerPeers); err!=nil{
+		if err := mrpc.threePC("AddTopic", payloadMsg, manager.ManagerPeers); err != nil {
 			fmt.Println(err)
 			// TODOs: Handle Error
 			return err
 		}
-
-
-
 
 		// dec := gob.NewDecoder(&buf) // Will read from network.
 
@@ -1059,6 +1055,24 @@ func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) er
 	}
 	return nil
 }
+
+// //TODO:
+// func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, response *[]string) error {
+// 	println("Getting leader...")
+// 	if request.Type == m.TOPIC_LIST {
+// 		requestedTopic, ok := manager.TopicMap[request.Topic]
+// 		// not found topic name
+// 		if !ok {
+// 			*response = "No leader for that topic/partition."
+// 		}
+// 		partition := requestedTopic.Partitions[request.PartitionIdx]
+// 		leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
+// 		*response = leaderIP
+// 	} else {
+// 		*response = "No leader for that topic/partition."
+// 	}
+// 	return nil
+// }
 
 //TODO:
 func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, ack *bool) error { return nil }

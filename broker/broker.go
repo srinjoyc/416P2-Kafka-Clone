@@ -678,26 +678,6 @@ func (brpc *BrokerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 	return nil
 }
 
-func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
-	*ack = false
-	if msg.Type == m.PUSHMESSAGE {
-		indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
-		println(indexID)
-		partition, ok := broker.partitionMap[indexID]
-		// not found topic or partition
-		if !ok {
-			*ack = false
-			return nil
-		}
-		if err := brpc.threePC("PublishMessage", msg, partition.Followers); err != nil {
-			return err
-		}
-		println("Message Published to: " + msg.Topic)
-		*ack = true
-	}
-	return nil
-}
-
 func (brpc *BrokerRPCServer) CommitPublishMessageRPC(msg *m.Message, ack *bool) error {
 	*ack = true
 	println("Message Comitted")
@@ -851,5 +831,23 @@ func (p *Partition) HashString() string {
 
 /* Provider / Consumer services */
 // TODO:
-func (mrpc *BrokerRPCServer) PublishMessage(request *m.Message, ack *bool) error { return nil }
+func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
+	*ack = false
+	if msg.Type == m.PUSHMESSAGE {
+		indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
+		println(indexID)
+		partition, ok := broker.partitionMap[indexID]
+		// not found topic or partition
+		if !ok {
+			*ack = false
+			return nil
+		}
+		if err := brpc.threePC("PublishMessage", msg, partition.Followers); err != nil {
+			return err
+		}
+		println("Message Published to: " + msg.Topic)
+		*ack = true
+	}
+	return nil
+}
 func (mrpc *BrokerRPCServer) ConsumeMessage(request *m.Message, ack *bool) error { return nil }
