@@ -298,7 +298,7 @@ func getTopicList() {
 	}
 
 	var response map[string]uint8
-	err = client.Call("ManagerRPCServer.GetTopics",
+	err = client.Call("ManagerRPCServer.GetTopicList",
 		message.Message{
 			ID:        config.ProviderID,
 			Type:      message.TOPIC_LIST,
