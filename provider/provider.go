@@ -19,6 +19,8 @@ import (
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
+var leaderIP string
+
 type configSetting struct {
 	ProviderID          string
 	KafkaManagerIPPorts string
@@ -183,7 +185,7 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	fmt.Printf("Success: %v\n", response.IPs)
 }
 
-func GetLeader(topic string, partitionNumber uint8) {
+func GetLeader(topic string, partitionNumber uint8) (leaderIP string) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -197,6 +199,34 @@ func GetLeader(topic string, partitionNumber uint8) {
 			ID:           config.ProviderID,
 			Type:         message.GET_LEADER,
 			Topic:        topic,
+			Role:         message.PROVIDER,
+			Timestamp:    time.Now(),
+			PartitionIdx: partitionNumber,
+		},
+		&response)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Success: %v\n", response)
+	// response is leader ip
+	return response
+}
+
+func PublishMessage(topic string, partitionNumber uint8, text string, leaderIP string) {
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	var response string
+	err = client.Call("BrokerRPCServer.PublishMessage",
+		message.Message{
+			ID:           config.ProviderID,
+			Type:         message.PUSHMESSAGE,
+			Topic:        topic,
+			Text:         text,
 			Role:         message.PROVIDER,
 			Timestamp:    time.Now(),
 			PartitionIdx: partitionNumber,
@@ -243,7 +273,9 @@ func shell() {
 		if cmd == "CreateNewTopic\n" {
 			CreateNewTopic("QQQ", 1, 2)
 		} else if cmd == "GetLeader\n" {
-			GetLeader("QQQ", 0)
+			leaderIP = GetLeader("QQQ", 0)
+		} else if cmd == "PublishMessage\n" {
+			PublishMessage("QQQ", 0, "HELLO WORLD!", leaderIP)
 		}
 	}
 }
