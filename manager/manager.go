@@ -658,14 +658,14 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	// fmt.Println(msg)
 
 	// fmt.Println("Break 1")
-	
+
 	// fmt.Println("Break 2")
 
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
 		go func(manID ManagerNodeID, manAddr string) {
 			fmt.Println("manager iD: ", manID, "manager IP: ", manAddr)
-			
+
 			// Prevent Closure
 			defer func() {
 				if p := recover(); p != nil {
@@ -1054,7 +1054,7 @@ func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error
 	}
 
 	manager.TopicMutex.Lock()
-	manager.TopicMap[msg.Topic] = topic
+	manager.TopicMap[msg.Topic] = &topic
 	manager.TopicMutex.Unlock()
 
 	*ack = true
@@ -1218,13 +1218,13 @@ func shell() {
 			server := getHashingNodes(v, n)
 			fmt.Printf("%v\n", server)
 		} else if cmd == "topicmap\n" {
-			for k, v := range manager.TopicMap{
+			for k, v := range manager.TopicMap {
 				fmt.Println(k, v.TopicName)
 
 				for _, j := range v.Partitions {
 					fmt.Println("idx: ", j.PartitionIdx, "leader: ", j.LeaderNodeID)
 				}
-				
+
 			}
 		} else if cmd == "peer\n" {
 			fmt.Println(manager.ManagerPeers)
@@ -1337,7 +1337,6 @@ func NewTimeoutErr(nodeID ManagerNodeID, addr string, err error) *TimeoutErr {
 func (e *TimeoutErr) Error() string {
 	return fmt.Sprintf("connection timed out - %v - %v: %v", e.NodeID, e.Addr, e.Err)
 }
-
 
 func (p *Partition) HashString() string {
 	var buf = []byte{}
