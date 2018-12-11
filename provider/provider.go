@@ -197,8 +197,7 @@ var cmds = map[string]func(...string) error{
 		// message text should be third arg
 		text := args[2]
 
-		// TODO: get real IP
-		publishMessage(topic, uint8(partitionNum), text, "fakeIP")
+		publishMessage(topic, uint8(partitionNum), text)
 		return
 	},
 	"Subscribe": func(args ...string) (err error) {
@@ -243,6 +242,14 @@ var cmds = map[string]func(...string) error{
 	},
 }
 
+// possible ips that the client can connect to
+type topicPartition struct {
+	topic     string
+	partition uint8
+}
+
+var ips = make(map[topicPartition]string)
+
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
 
@@ -271,21 +278,49 @@ func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Success: %v\n", response.IPs)
+	// TODO: replace with := range response.IPS
+	for i, leaderIP := range response.IPs {
+		ips[topicPartition{topic, uint8(i)}] = leaderIP
+	}
+
+	fmt.Printf("Successfully created topic %s with %d partitions\n", topic, partitionNumber)
 }
 
 func getTopicList() {
-	return
-}
-
-func publishMessage(topic string, partitionNumber uint8, text string, leaderIP string) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
-
+	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	var response message.Message
+	err = client.Call("ManagerRPCServer.GetTopicList",
+		message.Message{
+			ID:        config.ProviderID,
+			Type:      message.GET_TOPIC_LIST,
+			Role:      message.PROVIDER,
+			Timestamp: time.Now(),
+			Proposer:  config.ProviderID,
+		},
+		&response)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// TODO: make this the correct response
+	fmt.Printf("Got list of topics:\n%v\n", response.IPs)
+}
+
+func publishMessage(topic string, partitionNumber uint8, text string) {
+	leaderIP := ips[topicPartition{topic, partitionNumber}]
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	var response string
 	err = client.Call("BrokerRPCServer.PublishMessage",
 		message.Message{
@@ -296,16 +331,64 @@ func publishMessage(topic string, partitionNumber uint8, text string, leaderIP s
 			Role:         message.PROVIDER,
 			Timestamp:    time.Now(),
 			PartitionIdx: partitionNumber,
+			Proposer:     config.ProviderID,
 		},
 		&response)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Success: %v\n", response)
+
+	fmt.Printf("Successfully published")
 }
 
 func subscribe(topic string, partitionNumber uint8) {
-	return
+	leaderIP := ips[topicPartition{topic, partitionNumber}]
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var latestIndex uint8
+	err = client.Call("BrokerRPCServer.GetLatestIndex",
+		message.Message{
+			ID:           config.ProviderID,
+			Type:         message.GET_LATEST_INDEX,
+			Topic:        topic,
+			Role:         message.PROVIDER,
+			Timestamp:    time.Now(),
+			PartitionIdx: partitionNumber,
+			Proposer:     config.ProviderID,
+		},
+		&latestIndex)
+	if err != nil {
+		fmt.Printf("Failed to subscribe\n")
+		return
+	}
+
+	go func() {
+		for {
+			var response string
+			err = client.Call("BrokerRPCServer.ConsumeAt",
+				message.Message{
+					ID:           config.ProviderID,
+					Type:         message.CONSUME_MESSAGE,
+					Topic:        topic,
+					Role:         message.PROVIDER,
+					Timestamp:    time.Now(),
+					PartitionIdx: partitionNumber,
+					Index:        latestIndex,
+				},
+				&response)
+			if err != nil {
+				fmt.Printf("Failed to consume data from index %d\n", latestIndex)
+				continue
+			}
+			fmt.Println(response)
+			latestIndex++
+		}
+	}()
 }
 
 func consumeAt(topic string, partitionNumber uint8, index uint8) {
@@ -370,6 +453,8 @@ Hi! Possible commands:
 
 		// trim off trailing newline
 		fullCmd = fullCmd[:len(fullCmd)-1]
+
+		// empty input, try again
 		if fullCmd == "" {
 			continue
 		}

@@ -23,7 +23,10 @@ const (
 	MANAGER_PUSH
 	MANAGER_RESPONSE_TO_PROVIDER
 	CREATE_NEW_TOPIC
+	GET_TOPIC_LIST
 	PUSHMESSAGE
+	CONSUME_MESSAGE
+	GET_LATEST_INDEX
 )
 
 const (
@@ -36,18 +39,19 @@ const (
 
 // Message is used for communication among nodes
 type Message struct {
-	ID         string
-	Type       OPCODE
-	Text       string
-	Payload		[]byte
-	Topic      string
-	Partitions	uint8
-	PartitionIdx  uint8
-	Role       ROLE
-	Proposer   string
-	IPs        map[string]string
-	Timestamp  time.Time
-	ReplicaNum int
+	ID           string
+	Type         OPCODE
+	Text         string
+	Payload      []byte
+	Topic        string
+	Partitions   uint8
+	PartitionIdx uint8
+	Role         ROLE
+	Proposer     string
+	IPs          map[string]string
+	Timestamp    time.Time
+	ReplicaNum   int
+	Index        uint8
 }
 
 func (m *Message) Hash() [sha1.Size]byte {
@@ -63,6 +67,6 @@ func (m *Message) Hash() [sha1.Size]byte {
 
 	timeByte, _ := m.Timestamp.MarshalText()
 	buf = append(buf, timeByte...)
-	
+
 	return sha1.Sum(buf)
 }
