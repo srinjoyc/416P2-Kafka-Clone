@@ -906,10 +906,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 				var followerAddrMap = map[string]string{}
 
 				for _, v := range nodeIDs[1:] {
-					println("nodes")
-					println(v)
 					followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
-					println(followerAddrMap[v])
 				}
 				request.PartitionIdx = j
 				request.IPs = followerAddrMap
@@ -950,6 +947,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 				manager.TopicMap[request.Topic] = *topic
 				strIdx := strconv.FormatUint(uint64(partition.PartitionIdx), 10)
+				fmt.Println(strIdx)
 				leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
 				response.IPs[strIdx] = leaderIP
 
@@ -1015,7 +1013,7 @@ func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) er
 	if request.Type == m.GET_LEADER {
 		requestedTopic, ok := manager.TopicMap[request.Topic]
 		// not found topic name
-		if !ok || int(request.PartitionIdx) > len(requestedTopic.Partitions)-1 {
+		if !ok || int(request.PartitionIdx) >= len(requestedTopic.Partitions)-1 {
 			*response = "No leader for that topic/partition."
 			return nil
 		}

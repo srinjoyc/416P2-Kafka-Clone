@@ -174,6 +174,8 @@ func spawnListener(addr string) {
 }
 
 func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) error {
+	println("CreateNewPartition...", message.Topic, message.PartitionIdx)
+
 	*ack = false
 
 	partition := &Partition{
@@ -680,6 +682,11 @@ func (brpc *BrokerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
 
 func (brpc *BrokerRPCServer) CommitPublishMessageRPC(msg *m.Message, ack *bool) error {
 	*ack = true
+	fname := fmt.Sprintf("./disk/%v_%v_%v", config.BrokerNodeID, msg.Topic, msg.PartitionIdx)
+	err := basicIO.WriteFile(fname, msg.Text, true)
+	if err != nil {
+		return err
+	}
 	println("Message Comitted")
 	return nil
 }
@@ -710,13 +717,19 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 		LeaderIP:       broker.brokerAddr,
 		Followers:      make(map[BrokerNodeID]net.Addr),
 	}
-	for nodeId, ip := range message.IPs {
-		partition.Followers[BrokerNodeID(nodeId)], _ = net.ResolveTCPAddr("tcp4", ip)
-	}
+
 	broker.partitionMu.Lock()
 	broker.partitionMap[PartitionID(fmt.Sprintf("%v_%v", partition.TopicName, partition.PartitionIdx))] = partition
 	// broker.partitionMap[PartitionID(partition.HashString())] = partition
 	broker.partitionMu.Unlock()
+
+	for nid, ip := range message.IPs {
+		addr, err := net.ResolveTCPAddr("tcp", ip)
+		if err != nil {
+			return err
+		}
+		partition.Followers[BrokerNodeID(nid)] = addr
+	}
 
 	fname := fmt.Sprintf("./disk/%v_%v_%v", config.BrokerNodeID, partition.TopicName, partition.PartitionIdx)
 	err := basicIO.WriteFile(fname, "", false)
@@ -839,13 +852,17 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 		indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
 		println(indexID)
 		partition, ok := broker.partitionMap[indexID]
+
+		println(".............")
+		for key, v := range broker.partitionMap {
+			fmt.Printf("id: %v,follow %+v\n", key, v)
+		}
+		println(".............")
+
 		// not found topic or partition
 		if !ok {
 			*ack = false
 			return nil
-		}
-		for _, name := range partition.Followers {
-			println(name)
 		}
 		if err := brpc.threePC("PublishMessage", msg, partition.Followers); err != nil {
 			return err
