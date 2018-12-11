@@ -132,7 +132,7 @@ var config configSetting
 // reads from config before booting 'shell'
 func init() {
 	readConfigJSON(os.Args[1])
-	createNewTopic("test", 2, 2)
+	//createNewTopic("test", 2, 2)
 }
 
 /* readConfigJSON
