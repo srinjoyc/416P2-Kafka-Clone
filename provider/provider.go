@@ -176,6 +176,23 @@ var cmds = map[string]func(...string) error{
 		createNewTopic(topic, uint8(numPartitions), numReplicas)
 		return
 	},
+	"GetLeader": func(args ...string) (err error) {
+		if len(args) != 2 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// partition should be second arg
+		partition, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		getLeader(topic, uint8(partition))
+		return
+	},
 	"GetTopicList": func(args ...string) (err error) {
 		getTopicList()
 		return
@@ -287,6 +304,32 @@ func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	}
 
 	fmt.Printf("Successfully created topic %s with %d partitions\n", topic, partitionNumber)
+}
+
+func getLeader(topic string, partitionNumber uint8) {
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var response string
+	err = client.Call("ManagerRPCServer.GetLeader",
+		message.Message{
+			ID:           config.ProviderID,
+			Type:         message.GET_LEADER,
+			Topic:        topic,
+			Role:         message.PROVIDER,
+			Timestamp:    time.Now(),
+			PartitionIdx: partitionNumber,
+		},
+		&response)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Got leader: %v\n", response)
 }
 
 func getTopicList() {
@@ -428,33 +471,6 @@ func consumeAt(topic string, partitionNumber uint8, index int) {
 	fmt.Println(string(response.Payload))
 }
 
-// helper
-func getLeader(topic string, partitionNumber uint8) (leaderIP string) {
-	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
-	loggerOptions = govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var response string
-	err = client.Call("ManagerRPCServer.GetLeader",
-		message.Message{
-			ID:           config.ProviderID,
-			Type:         message.GET_LEADER,
-			Topic:        topic,
-			Role:         message.PROVIDER,
-			Timestamp:    time.Now(),
-			PartitionIdx: partitionNumber,
-		},
-		&response)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("Success: %v\n", response)
-	return
-}
-
 func main() {
 	runShell()
 }
@@ -464,6 +480,7 @@ func runShell() {
 	fmt.Printf(`Hi! Possible commands:
 
 	> CreateNewTopic <topicName> <numPartitions> <numReplicas>
+	> GetLeader <topicName> <partitionNum>
 	> GetTopicList
 	> Publish <topicName> <partitionNum> <message>
 	> Subscribe <topicName> <partitionNum>
