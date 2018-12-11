@@ -25,6 +25,11 @@ var config configSetting
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
 
+// possible cmds that the shell can perform
+var cmds = map[string]func(){
+	"hello": func() {},
+}
+
 /* readConfigJSON
  * Desc:
  *		read the configration from file into struct config
@@ -40,7 +45,7 @@ func readConfigJSON(configFile string) {
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
 }
 
-//
+// reads from config before booting 'shell'
 func init() {
 	readConfigJSON(os.Args[1])
 }
@@ -105,10 +110,6 @@ func init() {
 // }
 
 // func shell() {
-// 	// terminal controller like shell
-// 	println("*******************")
-// 	println("* Instuction: there are several kinds of operations\n* msg: upload the message into connected kafka nodes\n* file: upload the file to connected nodes")
-// 	println("*******************")
 // 	reader := bufio.NewReader(os.Stdin)
 // 	for {
 // 		print("cmd: ")
