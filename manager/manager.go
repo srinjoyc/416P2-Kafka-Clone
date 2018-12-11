@@ -666,21 +666,22 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerPeerAddr string) {
+		go func(manID ManagerNodeID, manAddr string) {
+			fmt.Println("manager iD: ", manID, "manager IP: ", manAddr)
 			// Prevent Closure
 			defer func() {
 				if p := recover(); p != nil {
-					errorCh <- NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
+					errorCh <- NewConnectionErr(manID, manAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
 
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", manAddr, logger, loggerOptions)
 
 			defer rpcClient.Close()
 
 			if err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+				errorCh <- NewConnectionErr(manID, manAddr, err)
 				return
 			}
 
@@ -688,13 +689,13 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommitRPC"), msg, &s); err != nil {
 				switch err.(type) {
 				case *RPCTimedout:
-					errorCh <- NewTimeoutErr(managerID, managerPeerAddr, err)
+					errorCh <- NewTimeoutErr(manID, manAddr, err)
 				default:
-					errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+					errorCh <- NewConnectionErr(manID, manAddr, err)
 				}
 				return
 			}
-			peerTransactionState[managerID] = s
+			peerTransactionState[manID] = s
 		}(managerID, managerPeer)
 	}
 
