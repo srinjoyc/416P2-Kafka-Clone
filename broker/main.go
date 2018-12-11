@@ -71,7 +71,6 @@ func Initialize() error {
 func registerBrokerWithManager() error {
 
 	fmt.Println("ManagerIP", config.ManagerIP)
-
 	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
 	checkError(err)
 

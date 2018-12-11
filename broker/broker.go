@@ -155,7 +155,7 @@ func spawnListener(addr string) {
 	server := rpc.NewServer()
 	server.Register(bRPC)
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", ":3000")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
@@ -165,7 +165,7 @@ func spawnListener(addr string) {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
 
-	fmt.Printf("Serving Server at: %v\n", tcpAddr.String())
+	fmt.Printf("Serving Server at: %v\n", config.BrokerIP)
 
 	vrpc.ServeRPCConn(server, listener, logger, loggerOptions)
 }
