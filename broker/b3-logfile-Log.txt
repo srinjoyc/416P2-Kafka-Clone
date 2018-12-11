@@ -2,5 +2,41 @@ b3 {"b3":1}
 Initialization Complete
 b3 {"b3":2}
 Making RPC call
-b3 {"m2":27, "m3":21, "b1":2, "b3":3, "b2":2, "m1":53}
+b3 {"b1":2, "b2":2, "b3":3, "m1":53, "m2":27, "m3":21}
 Received RPC Call response from server
+b3 {"m2":33, "m3":27, "b1":2, "b2":2, "client":2, "b4":7, "b3":4, "m1":69}
+Received RPC request
+b3 {"client":2, "b4":7, "b3":5, "m1":69, "m2":33, "m3":27, "b1":2, "b2":2}
+Sending response to RPC request
+b3 {"m1":69, "m2":33, "m3":27, "b1":5, "b2":5, "client":2, "b4":12, "b3":6}
+Received RPC request
+b3 {"m2":33, "m3":27, "b1":5, "b2":5, "client":2, "b4":12, "b3":7, "m1":69}
+Sending response to RPC request
+b3 {"m1":70, "m2":33, "m3":27, "b1":7, "b2":7, "client":2, "b4":22, "b3":8}
+Received RPC request
+b3 {"m1":70, "m2":33, "m3":27, "b1":7, "b2":7, "client":2, "b4":22, "b3":9}
+Received RPC request
+b3 {"b4":22, "b3":10, "m1":70, "m2":33, "m3":27, "b1":7, "b2":7, "client":2}
+Sending response to RPC request
+b3 {"m2":33, "m3":27, "b1":7, "b2":7, "client":2, "b4":22, "b3":11, "m1":70}
+Sending response to RPC request
+b3 {"b4":22, "b3":12, "m1":71, "m2":33, "m3":27, "b1":7, "b2":14, "client":2}
+Received RPC request
+b3 {"m1":71, "m2":33, "m3":27, "b1":7, "b2":14, "client":2, "b4":22, "b3":13}
+Sending response to RPC request
+b3 {"b1":11, "b2":14, "client":2, "b4":34, "b3":14, "m1":71, "m2":33, "m3":27}
+Received RPC request
+b3 {"m3":27, "b1":11, "b2":14, "client":2, "b4":34, "b3":15, "m1":71, "m2":33}
+Sending response to RPC request
+b3 {"b4":35, "b3":16, "m1":72, "m2":33, "m3":27, "b1":15, "b2":21, "client":2}
+Received RPC request
+b3 {"m2":33, "m3":27, "b1":15, "b2":21, "client":2, "b4":35, "b3":17, "m1":72}
+Sending response to RPC request
+b3 {"b1":17, "b2":32, "client":2, "b4":41, "b3":18, "m1":72, "m2":33, "m3":27}
+Received RPC request
+b3 {"client":2, "b4":41, "b3":19, "m1":72, "m2":33, "m3":27, "b1":17, "b2":32}
+Received RPC request
+b3 {"m2":33, "m3":27, "b1":17, "b2":32, "client":2, "b4":41, "b3":20, "m1":72}
+Sending response to RPC request
+b3 {"b3":21, "m1":72, "m2":33, "m3":27, "b1":17, "b2":32, "client":2, "b4":41}
+Sending response to RPC request

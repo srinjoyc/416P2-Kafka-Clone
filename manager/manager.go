@@ -99,7 +99,7 @@ type Partition struct {
 	TopicName    string
 	PartitionIdx uint8
 	LeaderNodeID BrokerNodeID
-	FollowerIPs	map[BrokerNodeID]string
+	FollowerIPs  map[BrokerNodeID]string
 }
 
 type Topic struct {
@@ -233,6 +233,7 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 // -------------------------------------------------------------------------------------------------------------------------------------------------------
 
 func (mrpc *ManagerRPCServer) RegisterPeer(msg *m.Message, peerList *map[string]string) error {
+
 	if err := mrpc.threePC("RegisterPeer", msg, manager.ManagerPeers); err != nil {
 		// Handle Error and make decision for next procedure
 		switch err.(type) {
@@ -881,8 +882,6 @@ func (mrpc *ManagerRPCServer) Ack(addr string, ack *bool) error {
 func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Message) error {
 	fmt.Println("RecivedCreatedTopic")
 
-	fmt.Println(request)
-
 	if int(request.ReplicaNum) > len(manager.BrokerNodes) {
 		response.Text = "At most " + strconv.Itoa(len(manager.BrokerNodes)) + " partitions"
 		return ErrInsufficientFreeNodes
@@ -894,7 +893,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		// response.Ack = true
 
 		topic := &Topic{
-			TopicName: request.Topic,
+			TopicName:  request.Topic,
 			Partitions: []*Partition{},
 		}
 
@@ -905,10 +904,12 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 		for i = 0; i < request.Partitions; i++ {
 			wg.Add(1)
-			go func(i uint8) {
+			go func(j uint8) {
+				k := j
+				fmt.Println(k)
 				partition := &Partition{
 					TopicName:    request.Topic,
-					PartitionIdx: uint8(i),
+					PartitionIdx: uint8(j),
 				}
 
 				nodeIDs := getHashingNodes(partition.HashString(), int(request.ReplicaNum))
@@ -921,7 +922,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 				for _, v := range nodeIDs[1:] {
 					followerAddrMap[v] = manager.BrokerNodes[BrokerNodeID(v)]
 				}
-				request.PartitionIdx = i
+				request.PartitionIdx = j
 				request.IPs = followerAddrMap
 				leaderNodeID := BrokerNodeID(nodeIDs[0])
 				leaderAddr := manager.BrokerNodes[leaderNodeID]
@@ -935,17 +936,17 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 				rpcClient, err := vrpc.RPCDial("tcp", leaderAddr, logger, loggerOptions)
 				if err != nil {
-					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
 				}
 				var ack bool
 				if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
-					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
 				}
 
 				partition.LeaderNodeID = leaderNodeID
 				partition.FollowerIPs = map[BrokerNodeID]string{}
 
-				for k, v := range followerAddrMap{
+				for k, v := range followerAddrMap {
 					partition.FollowerIPs[BrokerNodeID(k)] = v
 				}
 
@@ -974,8 +975,13 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 			fmt.Println("Done")
 		}
 
-		//Add to own and broadcast
+		// dec := gob.NewDecoder(&buf) // Will read from network.
 
+		// if err := enc.Encode(topic); err != nil {
+		// 	fmt.Println(err)
+		// }
+
+		//Add to own and broadcast
 
 	}
 
@@ -1063,7 +1069,7 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 		if doneCall.Error != nil {
 			return doneCall.Error
 		}
-	case <-time.After(time.Duration(3) * time.Second):
+	case <-time.After(time.Duration(100) * time.Second):
 		return NewRPCTimedout(rpcCall.ServiceMethod)
 	}
 	return nil
