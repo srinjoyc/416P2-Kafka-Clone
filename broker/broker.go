@@ -74,10 +74,9 @@ type BrokerNode struct {
 	brokerPeers      map[BrokerNodeID]string
 	partitionMap     map[PartitionID]*Partition
 	partitionMu      *sync.Mutex
-	brokerPeerMu	*sync.Mutex
+	brokerPeerMu     *sync.Mutex
 	transactionCache *lru.Cache
-	ManagerIPs		[]string
-
+	ManagerIPs       []string
 }
 
 type ConnectionErr struct {
@@ -125,8 +124,8 @@ func InitBroker(addr string) error {
 		partitionMap: make(map[PartitionID]*Partition),
 		partitionMu:  &sync.Mutex{},
 		brokerPeerMu: &sync.Mutex{},
-		brokerPeers: map[BrokerNodeID]string{},
-		ManagerIPs: []string{},
+		brokerPeers:  map[BrokerNodeID]string{},
+		ManagerIPs:   []string{},
 	}
 
 	broker.brokerAddr = config.BrokerIP
@@ -143,7 +142,6 @@ func InitBroker(addr string) error {
 
 	spawnListener(addr)
 
-	
 	return nil
 }
 
@@ -155,7 +153,7 @@ func spawnListener(addr string) {
 	server := rpc.NewServer()
 	server.Register(bRPC)
 
-	tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8000")
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
@@ -206,28 +204,24 @@ func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) e
 			connErr := err.(*ConnectionErr)
 
 			deleteBrokerMsg := &m.Message{
-				ID:        string(connErr.NodeID),
-				Text:      connErr.Addr,
-				Topic: message.Topic,
+				ID:           string(connErr.NodeID),
+				Text:         connErr.Addr,
+				Topic:        message.Topic,
 				PartitionIdx: message.PartitionIdx,
-				Proposer:  string(broker.brokerNodeID),
-				Timestamp: time.Now(),
+				Proposer:     string(broker.brokerNodeID),
+				Timestamp:    time.Now(),
 			}
 
 			var ack bool
 
-			if err := brpc.DeleteBroker(deleteBrokerMsg, &ack);err != nil {
-				
+			if err := brpc.DeleteBroker(deleteBrokerMsg, &ack); err != nil {
+
 				return err
 			}
 
-
-			
 			// if err := brpc.RequestNewPeer(newPeerRequest, &ack); err != nil {
 			// 	return fmt.Errorf("delete node failed: %v", err)
 			// }
-
-
 
 			// if ack {
 			// 	fmt.Println(manager.ManagerPeers)
@@ -248,25 +242,25 @@ func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) e
 	return nil
 }
 
-func (brpc *BrokerRPCServer) RequestNewPeer(msg *m.Message, ack *bool) error{
+func (brpc *BrokerRPCServer) RequestNewPeer(msg *m.Message, ack *bool) error {
 	return nil
 
 }
 
-func (brpc *BrokerRPCServer) DeleteBroker(msg *m.Message, ack *bool) error{
+func (brpc *BrokerRPCServer) DeleteBroker(msg *m.Message, ack *bool) error {
 
 	return nil
 }
 
-func (brpc *BrokerRPCServer) AddBrokerPeer(msg *m.Message, ack *bool) error{
-	if err:= brpc.threePC("AddBrokerPeer", msg, broker.brokerPeers); err!=nil{
+func (brpc *BrokerRPCServer) AddBrokerPeer(msg *m.Message, ack *bool) error {
+	if err := brpc.threePC("AddBrokerPeer", msg, broker.brokerPeers); err != nil {
 		//TODOs, handle Error
 		return err
 	}
 	return nil
 }
 
-func (brpc *BrokerRPCServer) CommitAddBrokerPeerRPC(msg *m.Message, ack *bool) error{
+func (brpc *BrokerRPCServer) CommitAddBrokerPeerRPC(msg *m.Message, ack *bool) error {
 	*ack = false
 
 	brokerPeerID := BrokerNodeID(msg.ID)
@@ -280,19 +274,17 @@ func (brpc *BrokerRPCServer) CommitAddBrokerPeerRPC(msg *m.Message, ack *bool) e
 	return nil
 }
 
+func (brpc *BrokerRPCServer) DeleteManagerAddr(msg *m.Message, ack *bool) error {
 
-
-func (brpc *BrokerRPCServer) DeleteManagerAddr(msg *m.Message, ack *bool) error{
-
-	if err := brpc.threePC("DeleteManagerAddr", msg, broker.brokerPeers); err!=nil{
+	if err := brpc.threePC("DeleteManagerAddr", msg, broker.brokerPeers); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (brpc *BrokerRPCServer) CommitDeleteManagerAddr(msg *m.Message, ack *bool) error{
+func (brpc *BrokerRPCServer) CommitDeleteManagerAddr(msg *m.Message, ack *bool) error {
 	*ack = false
-	
+
 	*ack = true
 	return nil
 }
@@ -965,6 +957,10 @@ func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) 
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
 		partition, ok := broker.partitionMap[indexID]
 		// not found topic or partition
+		println("Request Idx")
+		println(request.Index)
+		println("Last content index")
+		println(partition.LastContentIndex)
 		if !ok || request.Index > partition.LastContentIndex {
 			response.Index = partition.LastContentIndex
 			response.Text = "Topic/Partition/Index not found"
@@ -982,12 +978,12 @@ func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) 
 func (mrpc *BrokerRPCServer) GetLatestIndex(request *m.Message, response *int) error {
 	if request.Type == m.GET_LATEST_INDEX {
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
-		partition, ok := broker.partitionMap[indexID]
-		// not found topic or partition
-		if !ok {
+		partition, err := broker.partitionMap[indexID]
+		if !err || request.Index > partition.LastContentIndex {
 			*response = -1
 			return nil
 		}
+		// not found topic or partition
 		println(partition.LastContentIndex)
 		*response = partition.LastContentIndex
 	}
