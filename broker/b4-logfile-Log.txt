@@ -1,0 +1,6 @@
+b4 {"b4":1}
+Initialization Complete
+b4 {"b4":2}
+Making RPC call
+b4 {"b4":3, "client":2, "b1":2, "b2":2, "b3":2, "m1":71, "m2":27, "m3":33}
+Received RPC Call response from server

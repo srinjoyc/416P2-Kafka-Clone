@@ -18,12 +18,16 @@ import (
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
 )
 
+
 type configSetting struct {
 	ProviderID          string
 	KafkaManagerIPPorts string
 }
 
 var config configSetting
+
+var logger *govec.GoLog
+var loggerOptions govec.GoLogOptions
 
 /* readConfigJSON
  * Desc:
@@ -151,10 +155,11 @@ func initialize() {
 	readConfigJSON(os.Args[1])
 }
 
-func CreateNewTopic(topic string, replicaNum int, partitionNumber uint8) {
-	logger := govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
-	options := govec.GetDefaultLogOptions()
-	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, options)
+func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -166,8 +171,9 @@ func CreateNewTopic(topic string, replicaNum int, partitionNumber uint8) {
 			Topic:      topic,
 			Role:       message.PROVIDER,
 			Timestamp:  time.Now(),
-			Partition:  partitionNumber,
+			Partitions:  partitionNumber,
 			ReplicaNum: replicaNum,
+			Proposer:	config.ProviderID,
 		},
 		&response)
 	if err != nil {
@@ -203,6 +209,5 @@ func main() {
 	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
 	// provideMsg(config.KafkaManagerIPPorts[0], msg)
 
-	CreateNewTopic("CS", 3, 2)
-
+	CreateNewTopic("CS", 1, 2)
 }

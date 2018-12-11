@@ -27,10 +27,10 @@ const (
 )
 
 const (
-	MANAGER ROLE = iota
-	LEADER
+	LEADER ROLE = iota
 	FOLLOWER
 	PROVIDER
+	MANAGER
 	UNID
 )
 
@@ -40,10 +40,11 @@ type Message struct {
 	Type       OPCODE
 	Text       string
 	Topic      string
-	Partition  uint8
+	Partitions	uint8
+	PartitionIdx  uint8
 	Role       ROLE
 	Proposer   string
-	IPs        []string
+	IPs        map[string]string
 	Timestamp  time.Time
 	ReplicaNum int
 }
@@ -52,19 +53,14 @@ func (m *Message) Hash() [sha1.Size]byte {
 	var buf []byte
 
 	buf = append(buf, []byte(m.ID)...)
-	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Type), 10))...)
 	buf = append(buf, []byte(m.Text)...)
 	buf = append(buf, []byte(m.Topic)...)
-	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Partition), 10))...)
+	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Partitions), 10))...)
 	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Role), 10))...)
 	buf = append(buf, []byte(m.Proposer)...)
 
-	for _, ip := range m.IPs {
-		buf = append(buf, []byte(ip)...)
-	}
-
 	timeByte, _ := m.Timestamp.MarshalText()
 	buf = append(buf, timeByte...)
-
+	
 	return sha1.Sum(buf)
 }

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
 	"fmt"
-	"log"
 	"net"
 	"net/rpc"
 	"os"
@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	IOlib "../lib/IOlib"
 	m "../lib/message"
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
+	lru "github.com/hashicorp/golang-lru"
 )
 
 type BrokerRPCServer int
@@ -29,25 +29,20 @@ type record struct {
 
 type partition []*record
 
-type NodeID string
+type BrokerNodeID string
 
-type TopicID string
+type PartitionID string
+
+type ROLE uint
+
+const (
+	LEADER ROLE = iota
+	FOLLOWER
+)
 
 type State uint
 
-type Topic struct {
-	TopicName    string
-	ReplicaNum   uint8
-	PartitionNum uint8
-	Role         Status
-	Buffer       []*record
-	FollowerList map[NodeID]net.Addr
-}
-
-const (
-	Leader Status = iota
-	Follower
-)
+type ClientID string
 
 const (
 	READY State = iota
@@ -58,16 +53,30 @@ const (
 	ABORT
 )
 
+type Partition struct {
+	TopicName      string
+	PartitionIdx   uint8
+	ReplicationNum uint8
+	Partitions     uint8
+	Role           ROLE
+	Buffer         []*record
+	LeaderIP       net.Addr
+	Followers      map[BrokerNodeID]net.Addr
+	ClientOffsetMap map[ClientID]uint
+}
+
 type BrokerNode struct {
-	brokerNodeID NodeID
-	brokerAddr net.Addr
-	managerAddr net.Addr
-	topicList map[TopicID]*Topic
+	brokerNodeID     BrokerNodeID
+	brokerAddr       net.Addr
+	managerAddr      net.Addr
+	partitionMap     map[PartitionID]*Partition
+	partitionMu      *sync.Mutex
+	transactionCache *lru.Cache
 }
 
 type ConnectionErr struct {
 	Addr   net.Addr
-	NodeID NodeID
+	NodeID BrokerNodeID
 	Err    error
 }
 
@@ -80,26 +89,56 @@ type RPCTimedout struct {
 	ServiceMethod string
 }
 
+type AgreementErr struct {
+	msg string
+}
+
+type RecoveryErr struct {
+	Err error
+}
+
+type TimeoutErr struct {
+	Addr   net.Addr
+	NodeID BrokerNodeID
+	Err    error
+}
+
+//Error during Abort
+type AbortErr struct {
+	Err error
+}
+
+const cacheSize = 10
+
 var broker *BrokerNode
 
 // Initialize starts the node as a Broker node in the network
 func InitBroker(addr string) error {
 	broker = &BrokerNode{
-		brokerNodeID: NodeID(config.BrokerNodeID),
-		topicList: make(map[TopicID]*Topic),
+		brokerNodeID: BrokerNodeID(config.BrokerNodeID),
+		partitionMap: make(map[PartitionID]*Partition),
+		partitionMu:  &sync.Mutex{},
 	}
 
 	brokerAddr, err := net.ResolveTCPAddr("tcp", config.BrokerIP)
-	if err!= nil{
+	if err != nil {
 		return err
 	}
 	broker.brokerAddr = brokerAddr
 
 	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
-	if err!= nil{
+	if err != nil {
 		return err
 	}
 	broker.managerAddr = managerAddr
+
+	cache, err := lru.New(cacheSize)
+
+	if err != nil {
+		return err
+	}
+
+	broker.transactionCache = cache
 
 	go spawnListener(addr)
 	if err := registerBrokerWithManager(); err != nil {
@@ -133,145 +172,156 @@ func spawnListener(addr string) {
 	vrpc.ServeRPCConn(server, listener, logger, loggerOptions)
 }
 
-func (bs *BrokerRPCServer) CreateTopic(message *m.Message, ack *bool) error {
+func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) error {
 	*ack = true
+
+	fmt.Println("Create New Partition")
+
+	fmt.Println(message)
+
 	fmt.Println("\nLeader ID", config.BrokerNodeID)
 	fmt.Println("Leader Topic Name", message.Topic)
 
-	topic := &Topic{
-		TopicName:    message.Topic,
-		ReplicaNum:   uint8(message.ReplicaNum),
-		PartitionNum: message.Partition,
-		Role:         Leader,
-	}
-	
-	var wg sync.WaitGroup
-	errorCh := make(chan error, 1)
-
-	for _, addr := range message.IPs {
-		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-
-		wg.Add(1)
-
-		go func(addr net.Addr) {
-			
-			defer func() {
-				if p := recover(); p != nil {
-					errorCh <- fmt.Errorf("bad connection - %v: %v", addr, p)
-				}
-			}()
-			defer wg.Done()
-
-			rpcClient, err := vrpc.RPCDial("tcp", tcpAddr.String(), logger, loggerOptions)
-			defer rpcClient.Close()
-			if err != nil {
-				errorCh <- fmt.Errorf("bad connection - %v: %v", addr, err)
-				return
-			}
-			
-			var res string
-
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.GetNodeID"), string(broker.brokerNodeID), &res); err != nil {
-				errorCh <- fmt.Errorf("bad connection - %v: %v", addr, err)
-				return
-			}
-
-			topic.FollowerList[NodeID(res)] = addr
-
-		}(tcpAddr)
-
+	partition := &Partition{
+		TopicName:      message.Topic,
+		PartitionIdx:   message.PartitionIdx,
+		ReplicationNum: uint8(message.ReplicaNum),
+		Partitions:     message.Partitions,
+		Role:           ROLE(message.Role),
+		LeaderIP:       broker.brokerAddr,
+		Followers:      make(map[BrokerNodeID]net.Addr),
+		ClientOffsetMap: make(map[ClientID]uint),
 	}
 
-	wg.Wait()
+	fmt.Println("IPs", message.IPs)
 
-	topicID := TopicID(message.ID)
-
-
-	if _, exist := broker.topicList[topicID]; exist {
-		return fmt.Errorf("Topic ID has already existed")
+	for k, v := range message.IPs {
+		addr, _ := net.ResolveTCPAddr("tcp", v)
+		partition.Followers[BrokerNodeID(k)] = addr
 	}
 
-	followerMessage := &m.Message{
-		Topic:      message.Topic,
-		Type:       message.Type,
-		Partition:  message.Partition,
-		ReplicaNum: message.ReplicaNum,
-		IPs:        message.IPs,
-	}
+	message.Role = m.ROLE(FOLLOWER)
 
+	fmt.Println("Ready for 3-phase commit")
 
-	if err := bs.threePC("AddTopic", followerMessage, topic.FollowerList); err!=nil{
-		return err
+	if err := brpc.threePC("CreateNewPartition", message, partition.Followers); err != nil {
+		// TODO handle retry on connection error
 	}
 
 	return nil
+
+	// var wg sync.WaitGroup
+	// errorCh := make(chan error, 1)
+
+	// for _, addr := range message.IPs {
+	// 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	// 	if err != nil {
+	// 		fmt.Println(err)
+	// 		continue
+	// 	}
+
+	// 	wg.Add(1)
+	// 	go func(addr net.Addr) {
+	// 		defer func() {
+	// 			if p := recover(); p != nil {
+	// 				errorCh <- fmt.Errorf("bad connection - %v: %v", addr, p)
+	// 			}
+	// 		}()
+	// 		defer wg.Done()
+
+	// 		rpcClient, err := vrpc.RPCDial("tcp", tcpAddr.String(), logger, loggerOptions)
+	// 		defer rpcClient.Close()
+	// 		if err != nil {
+	// 			errorCh <- fmt.Errorf("bad connection - %v: %v", addr, err)
+	// 			return
+	// 		}
+	// 		var res NodeID
+	// 		if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.GetNodeID"), string(broker.brokerNodeID), &res); err != nil {
+	// 			errorCh <- fmt.Errorf("bad connection - %v: %v", addr, err)
+	// 			return
+	// 		}
+
+	// 		partition.Followers[NodeID(res)] = addr
+
+	// 	}(tcpAddr)
+
+	// }
+
+	// wg.Wait()
+
+	// topicID := TopicID(message.ID)
+
+	// if _, exist := broker.topicList[topicID]; exist {
+	// 	return fmt.Errorf("Topic ID has already existed")
+	// }
+
+	// followerMessage := &m.Message{
+	// 	Topic:      message.Topic,
+	// 	Type:       message.Type,
+	// 	Partition:  message.Partition,
+	// 	ReplicaNum: message.ReplicaNum,
+	// 	IPs:        message.IPs,
+	// }
+
+	// if err := brpc.threePC("AddTopic", followerMessage, topic.FollowerList); err!=nil{
+	// 	return err
+	// }
+
 }
 
-func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) error {
+// func broadcastToFollowers(message m.Message, addr string, w *sync.WaitGroup) error {
 
-	client, err := vrpc.RPCDial("tcp", addr, logger, loggerOptions)
-	if err != nil {
-		log.Fatal(err)
-	}
+// 	client, err := vrpc.RPCDial("tcp", addr, logger, loggerOptions)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
 
-	var ack bool
-	println("broadcasting", addr)
-	if err := client.Call("BrokerRPCServer.StartFollower", message, &ack); err != nil {
-		return err
-	}
+// 	var ack bool
+// 	println("broadcasting", addr)
+// 	if err := client.Call("BrokerRPCServer.StartFollower", message, &ack); err != nil {
+// 		return err
+// 	}
 
-	w.Done()
+// 	w.Done()
 
-	return nil
-}
-
-func (bs *BrokerRPCServer) GetNodeID(srcNodeID string, nodeID *string) error {
-	*nodeID = string(broker.brokerNodeID)
-	return nil
-}
-
-func (bs *BrokerRPCServer) CommitAddTopic(message *m.Message, ack *bool) error {
-	fmt.Println("Start Follower")
-	fmt.Println("Topic:", message.Topic)
-
-	*ack = true
-	topic := &Topic{
-		TopicName:        message.Topic,
-		ReplicaNum:       uint8(message.ReplicaNum),
-		PartitionNum:     uint8(message.Partition),
-		Role:             Follower,
-	}
-
-	if _, exist := broker.topicList[TopicID(message.ID)]; exist {
-		*ack = false
-		return fmt.Errorf("Topic ID has already existed")
-	}
-
-	if message.Type == m.CREATE_NEW_TOPIC {
-		for i := 0; i < int(message.Partition); i++ {
-			filepostion := "./disk/broker_" + config.BrokerNodeID + "_" + message.Topic + "_" + strconv.Itoa(i)
-			// b.topicList[topic.topicID].Buffer[i] = []byte("")
-			IOlib.WriteFile(filepostion, "", false)
-		}
-	}
-
-	broker.topicList[TopicID(message.ID)] = topic
-
-	return nil
-}
-
-// func (b *BrokerServer) AppendToPartition(m *Message, res *bool) error {
-// 	topicId := m.Topic
-// 	var rec record
-// 	copy(rec[:], m.Payload.Marshall())
-// 	Broker.topicList[topicId].partition = append(Broker.topicList[topicId].partition, &rec)
-// 	*res = true
 // 	return nil
 // }
+
+// func (brpc *BrokerRPCServer) GetNodeID(srcNodeID NodeID, nodeID *NodeID) error {
+// 	*nodeID = broker.brokerNodeID
+// 	return nil
+// }
+
+// func (brpc *BrokerRPCServer) CommitAddPartition(message *m.Message, ack *bool) error {
+// 	fmt.Println("Start Follower")
+// 	fmt.Println("Topic:", message.Topic)
+
+// 	*ack = true
+// 	topic := &Partition{
+// 		TopicName:      message.Topic,
+// 		PartitionIdx:   message.Partition,
+// 		ReplicationNum: uint8(message.ReplicaNum),
+// 		Role:           Follower,
+// 	}
+
+// 	if _, exist := broker.topicList[TopicID(message.ID)]; exist {
+// 		*ack = false
+// 		return fmt.Errorf("Topic ID has already existed")
+// 	}
+
+// 	if message.Type == m.CREATE_NEW_TOPIC {
+// 		for i := 0; i < int(message.Partition); i++ {
+// 			filepostion := "./disk/broker_" + config.BrokerNodeID + "_" + message.Topic + "_" + strconv.Itoa(i)
+// 			// b.topicList[topic.topicID].Buffer[i] = []byte("")
+// 			IOlib.WriteFile(filepostion, "", false)
+// 		}
+// 	}
+
+// 	broker.topicList[TopicID(message.ID)] = topic
+
+// 	return nil
+// }
+
 
 // func (b *BrokerServer) AddClient(m *Message, res *bool) error {
 // 	topicId := m.Topic
@@ -307,35 +357,43 @@ func (bs *BrokerRPCServer) CommitAddTopic(message *m.Message, ack *bool) error {
 // 	return nil
 // }
 
-func (bs *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[NodeID]net.Addr) error {
+func (brpc *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[BrokerNodeID]net.Addr) error {
 	// canCommitPhase
-	peerTransactionState, err := bs.canCommit(serviceMethod, msg, peerAddrs)
+
+	peerTransactionState, err := brpc.canCommit(serviceMethod, msg, peerAddrs)
 
 	if err != nil {
 		fmt.Println("Can commit Err: ", err)
 		switch err.(type) {
 		case *TransactionErr:
-			e := err.(*TransactionErr)
-			switch (e.Err).(type) {
-			case *ConnectionErr:
-				fmt.Println("attempt to retry by delete peer")
 
-				ce := (e.Err).(*ConnectionErr)
-				deleteMsg := m.Message{
-					ID:        string(ce.NodeID),
-					Text:      ce.Addr.String(),
-					Proposer:  string(broker.brokerNodeID),
-					Timestamp: time.Now(),
-				}
-				var ack bool
-				if err := bs.DeletePeer(&deleteMsg, &ack); err != nil {
-					return fmt.Errorf("delete node failed: %v", err)
-				}
+			// TODO: Needs to retry transaction by asking manager for a new peer
 
-				if ack {
-				}
+			// e := err.(*TransactionErr)
 
-			}
+			// switch (e.Err).(type) {
+			// case *ConnectionErr:
+			// 	fmt.Println("attempt to retry by delete peer")
+
+			// 	ce := (e.Err).(*ConnectionErr)
+			// 	deleteMsg := m.Message{
+			// 		ID:        string(ce.NodeID),
+			// 		Text:      ce.Addr.String(),
+			// 		Proposer:  string(manager.ManagerNodeID),
+			// 		Timestamp: time.Now(),
+			// 	}
+			// 	var ack bool
+			// 	if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+			// 		return fmt.Errorf("delete node failed: %v", err)
+			// 	}
+
+			// 	if ack {
+			// 		if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+			// 			return fmt.Errorf("retry failed: %v", err)
+			// 		}
+			// 	}
+
+			// }
 		default:
 			fmt.Println("default Error")
 			return err
@@ -345,106 +403,62 @@ func (bs *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAdd
 
 	// recovery if needed
 	if peerTransactionState != nil {
-		var recoverPeerAddr map[NodeID]net.Addr
-
-		for k, v := range *peerTransactionState {
-			if v == COMMIT {
+		var recoverPeerAddr map[BrokerNodeID]net.Addr
+		for k, v := range peerTransactionState {
+			if v != COMMIT {
+				recoverPeerAddr[k] = peerAddrs[k]
 			}
 		}
-
-		if err := bs.recoverPhase(serviceMethod, msg, recoverPeerAddr); err != nil {
+		if err := brpc.recoverPhase(serviceMethod, msg, recoverPeerAddr); err != nil {
 			return err
 		}
 		return nil
 	}
+
 	// preCommitPhase
-	if err := bs.preCommit(msg, peerAddrs); err != nil {
-		switch err.(type) {
-		case *TransactionErr:
-			e := err.(*TransactionErr)
-			switch (e.Err).(type) {
-			case *ConnectionErr:
-				fmt.Println("attempt to retry by delete peer")
-				ce := (e.Err).(*ConnectionErr)
-
-				deleteMsg := m.Message{
-					ID:        string(ce.NodeID),
-					Text:      ce.Addr.String(),
-					Proposer:  string(broker.brokerNodeID),
-					Timestamp: time.Now(),
-				}
-
-				var ack bool
-				if err := bs.DeletePeer(&deleteMsg, &ack); err != nil {
-					return fmt.Errorf("delete node failed: %v", err)
-				}
-
-				if ack {
-				}
-			}
-		default:
-			fmt.Println("default Error")
-			return err
-		}
-		return nil
+	if err := brpc.preCommit(serviceMethod, msg, peerAddrs); err != nil {
+		return err
 	}
 
 	// commitPhase
-	if err := bs.commit(serviceMethod, msg, peerAddrs); err != nil {
-		switch err.(type) {
-		case *TransactionErr:
-			e := err.(*TransactionErr)
-			switch (e.Err).(type) {
-			case *ConnectionErr:
-				fmt.Println("attempt to retry by delete peer")
-				ce := (e.Err).(*ConnectionErr)
-				deleteMsg := m.Message{
-					ID:        string(ce.NodeID),
-					Text:      ce.Addr.String(),
-					Proposer:  string(broker.brokerNodeID),
-					Timestamp: time.Now(),
-				}
-				var ack bool
-				if err := bs.DeletePeer(&deleteMsg, &ack); err != nil {
-					return fmt.Errorf("delete node failed: %v", err)
-				}
-
-			
-				if ack {
-				}
-			}
-		default:
-			fmt.Println("default Error")
-			return err
-		}
-		return nil
+	if err := brpc.commit(serviceMethod, msg, peerAddrs); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (bs *BrokerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, peerAddrs map[NodeID]net.Addr) (err error) {
+func (brpc *BrokerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, peerAddrs map[BrokerNodeID]net.Addr) (err error) {
 	fmt.Println("Begin Recover")
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
-
 
 	for k, v := range peerAddrs {
 		if k == broker.brokerNodeID {
 			continue
 		}
 		wg.Add(1)
-		go func(brokerNodeID NodeID, brokerrPeerAddr net.Addr) {
+
+		go func(brokerID BrokerNodeID, brokerAddr net.Addr) {
 			defer func() {
 				if p := recover(); p != nil {
+					err = NewConnectionErr(brokerID, brokerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
+			rpcClient, err := vrpc.RPCDial("tcp", brokerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
+				errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
 				return
 			}
 			var ack bool
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.Commit%vRPC", serviceMethod), msg, &ack); err != nil {
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.Commit%vRPC", serviceMethod), msg, &ack); err != nil {
+				switch err.(type) {
+				case *RPCTimedout:
+					errorCh <- NewTimeoutErr(brokerID, brokerAddr, err)
+				default:
+					errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
+				}
 				return
 			}
 		}(k, v)
@@ -457,57 +471,81 @@ func (bs *BrokerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, pe
 	}()
 	select {
 	case err := <-errorCh:
-		return fmt.Errorf("recover aborted: %v", err)
+		broker.transactionCache.Add(msg.Hash(), ABORT)
+		return NewRecoveryErr(err)
 	case <-c:
 		fmt.Println("Commit Phase Done")
 	}
 
-	if _, exists := peerAddrs[manager.ManagerNodeID]; exists {
+	if _, exists := peerAddrs[broker.brokerNodeID]; exists {
 		// Local Commit
 		var ack bool
 
-		method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+		method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
 		if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
-			return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
+			broker.transactionCache.Add(msg.Hash(), ABORT)
+			newErr := err.(error)
+			return NewTransactionErr(newErr, "local canCommit")
 		}
 	}
 	fmt.Println("Done Recover")
 	return nil
 }
 
-func (bs *BrokerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerAddrs map[NodeID]net.Addr) (*map[NodeID]State, error) {
+func (brpc *BrokerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerAddrs map[BrokerNodeID]net.Addr) (map[BrokerNodeID]State, error) {
 	// canCommitPhase
-	fmt.Println("CanCommitPhase")
+	fmt.Println("canCommitPhase")
+	v, exist := broker.transactionCache.Get(msg.Hash())
+	var s State
+
+	if exist {
+		s, ok := v.(State)
+		if !ok {
+			return nil, fmt.Errorf("Couldn't typecast interface value: %v to State", s)
+		}
+	} else {
+		s = READY
+	}
+
+	peerTransactionState := make(map[BrokerNodeID]State)
+	peerTransactionState[broker.brokerNodeID] = s
+
 	var wg sync.WaitGroup
 	errorCh := make(chan error, 1)
-	fmt.Println("Break1")
-	peerTransactionState := make(map[ManagerNodeID]State)
 
-	for managerID, managerPeer := range peerAddrs {
+	for brokerID, brokerAddr := range peerAddrs {
 		wg.Add(1)
-		go func(managerID ManagerNodeID, managerPeerAddr net.Addr) {
+		go func(brokerID BrokerNodeID, brokerAddr net.Addr) {
 			// Prevent Closure
 			defer func() {
 				if p := recover(); p != nil {
-					errorCh <- NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
+					errorCh <- NewConnectionErr(brokerID, brokerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", brokerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+				errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
 				return
 			}
 			var s State
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommitRPC"), msg, &s); err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.CanCommitRPC"), msg, &s); err != nil {
+				switch err.(type) {
+				case *RPCTimedout:
+					errorCh <- NewTimeoutErr(brokerID, brokerAddr, err)
+				default:
+					errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
+				}
 				return
 			}
-			peerTransactionState[managerID] = s
-		}(managerID, managerPeer)
+
+			peerTransactionState[brokerID] = s
+
+		}(brokerID, brokerAddr)
 	}
 
+	broker.transactionCache.Add(msg.Hash(), WAIT)
 
 	c := make(chan struct{})
 	go func() {
@@ -517,59 +555,70 @@ func (bs *BrokerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerA
 
 	select {
 	case err := <-errorCh:
-		fmt.Println("Abort Transaction")
-		return nil, NewTransactionErr(err, "canCommit")
+		broker.transactionCache.Add(msg.Hash(), ABORT)
+		// best effort error msg sent
+		brpc.abort(msg, peerAddrs)
+		return nil, err
 	case <-c:
-		fmt.Println("CanCommitPhase Done")
 	}
 
-	fmt.Println("Break4")
 	// Local canCommit
-	var s State
-	method := reflect.ValueOf(bs).MethodByName(fmt.Sprintf("CanCommitRPC"))
+	method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("CanCommitRPC"))
 	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&s)})[0].Interface(); err != nil {
-		return nil, fmt.Errorf("coordinator failed: transaction aborted: %v", err)
+		broker.transactionCache.Add(msg.Hash(), ABORT)
+		brpc.abort(msg, peerAddrs)
+		errTmp := err.(error)
+		return nil, errTmp
 	}
-	peerTransactionState[broker.brokerNodeID] = s
+
 	for _, v := range peerTransactionState {
-		if v == COMMIT {
-			return &peerTransactionState, nil
+		if v == COMMIT || v == PREPARE {
+			return peerTransactionState, nil
 		}
 	}
-	fmt.Println("Peer Transaction Map", peerTransactionState)
+
+	fmt.Println("canCommitPhase Done")
+
 	return nil, nil
 }
 
-func (bs *BrokerRPCServer) preCommit(msg *m.Message, peerAddrs map[NodeID]net.Addr) (err error) {
+func (brpc *BrokerRPCServer) preCommit(serviceMethod string, msg *m.Message, peerAddrs map[BrokerNodeID]net.Addr) (err error) {
 	// preCommitPhase
 	fmt.Println("PreCommit Phase")
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
-	for managerID, managerPeer := range peerAddrs {
+	for brokerID, brokerAddr := range peerAddrs {
 		wg.Add(1)
-		go func() {
+		go func(brokerID BrokerNodeID, brokerAddr net.Addr) {
 			defer func() {
 				if p := recover(); p != nil {
-					err = NewConnectionErr(managerID,brokerPeerAddr, fmt.Errorf("%v", p))
+					err = NewConnectionErr(brokerID, brokerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", broker.br.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", brokerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+				errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
 				return
 			}
 			var ack bool
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.PreCommitRPC"), msg, &ack); err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.PreCommitRPC"), msg, &ack); err != nil {
+				switch err.(type) {
+				case *RPCTimedout:
+					errorCh <- NewTimeoutErr(brokerID, brokerAddr, err)
+				default:
+					errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
+				}
 				return
 			}
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
 			}
-		}()
+		}(brokerID, brokerAddr)
 	}
+
+	broker.transactionCache.Add(msg.Hash(), PREPARE)
 
 	c := make(chan struct{})
 	go func() {
@@ -578,43 +627,62 @@ func (bs *BrokerRPCServer) preCommit(msg *m.Message, peerAddrs map[NodeID]net.Ad
 	}()
 	select {
 	case err := <-errorCh:
-		return NewTransactionErr(err, "preCommit")
+		fmt.Println(err)
+		switch err.(type) {
+		case *TimeoutErr:
+			broker.transactionCache.Add(msg.Hash(), ABORT)
+			brpc.abort(msg, peerAddrs)
+		default:
+			var ack bool
+			method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+			if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
+				brpc.abort(msg, peerAddrs)
+				broker.transactionCache.Add(msg.Hash(), ABORT)
+				return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
+			}
+			broker.transactionCache.Add(msg.Hash(), COMMIT)
+		}
+		return err
 	case <-c:
 		fmt.Println("PreCommit Phase Done")
 	}
-
 	return nil
 }
 
-func (bs *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAddrs map[NodeID]net.Addr) (err error) {
+func (brpc *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAddrs map[BrokerNodeID]net.Addr) (err error) {
+	fmt.Println("Commit Phase")
 	errorCh := make(chan error, 1)
 	wg := sync.WaitGroup{}
-	for managerID, managerPeer := range peerAddrs {
+	for brokerID, brokerAddr := range peerAddrs {
 		wg.Add(1)
-		go func() {
+		go func(brokerID BrokerNodeID, brokerAddr net.Addr) {
 			defer func() {
 				if p := recover(); p != nil {
-					err = NewConnectionErr(managerID, managerPeerAddr, fmt.Errorf("%v", p))
+					err = NewConnectionErr(brokerID, brokerAddr, fmt.Errorf("%v", p))
 				}
 			}()
 			defer wg.Done()
-			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr.String(), logger, loggerOptions)
+			rpcClient, err := vrpc.RPCDial("tcp", brokerAddr.String(), logger, loggerOptions)
 			defer rpcClient.Close()
 			if err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+				errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
 				return
 			}
 			var ack bool
-			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.Commit%vRPC", serviceMethod), msg, &ack); err != nil {
-				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.Commit%vRPC", serviceMethod), msg, &ack); err != nil {
+				switch err.(type) {
+				case *RPCTimedout:
+					errorCh <- NewTimeoutErr(brokerID, brokerAddr, err)
+				default:
+					errorCh <- NewConnectionErr(brokerID, brokerAddr, err)
+				}
 				return
 			}
 
 			if !ack {
 				errorCh <- fmt.Errorf("peer disagrees")
 			}
-		}()
-
+		}(brokerID, brokerAddr)
 	}
 
 	c := make(chan struct{})
@@ -625,28 +693,143 @@ func (bs *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAddr
 
 	select {
 	case err := <-errorCh:
-		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return NewTransactionErr(err, "commit")
+		switch err.(type) {
+		case *TimeoutErr:
+			broker.transactionCache.Add(msg.Hash(), ABORT)
+			brpc.abort(msg, peerAddrs)
+		default:
+			var ack bool
+			method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+
+			if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
+				brpc.abort(msg, peerAddrs)
+				broker.transactionCache.Add(msg.Hash(), ABORT)
+				return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
+			}
+			broker.transactionCache.Add(msg.Hash(), COMMIT)
+		}
+		return err
 	case <-c:
 		fmt.Println("Commit Phase Done")
 	}
 
 	// Local Commit
-	var ack bool
 
-	method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+	var ack bool
+	method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+
 	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
-		manager.TransactionCache.Add(msg.Hash(), ABORT)
+		brpc.abort(msg, peerAddrs)
+		broker.transactionCache.Add(msg.Hash(), ABORT)
 		return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
 	}
-
-	if !ack {
-		manager.TransactionCache.Add(msg.Hash(), ABORT)
-		return fmt.Errorf("transaction aborted: transaction not commited")
-	}
+	broker.transactionCache.Add(msg.Hash(), COMMIT)
 
 	return nil
 }
+
+func (brpc *BrokerRPCServer) abort(msg *m.Message, peerAddrs map[BrokerNodeID]net.Addr) {
+	errorCh := make(chan error, 1)
+	wg := sync.WaitGroup{}
+
+	for brokerID, brokerAddr := range peerAddrs {
+		wg.Add(1)
+		go func(brokerID BrokerNodeID, brokerAddr net.Addr) {
+			defer func() {
+				if p := recover(); p != nil {
+					fmt.Println(NewAbortErr(fmt.Errorf("%v", p)))
+				}
+			}()
+			defer wg.Done()
+			rpcClient, err := vrpc.RPCDial("tcp", brokerAddr.String(), logger, loggerOptions)
+			defer rpcClient.Close()
+			if err != nil {
+				fmt.Println(NewAbortErr(NewConnectionErr(brokerID, brokerAddr, err)))
+				return
+			}
+			var ack bool
+			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("BrokerRPCServer.AbortRPC"), msg, &ack); err != nil {
+				fmt.Println(NewAbortErr(NewConnectionErr(brokerID, brokerAddr, err)))
+				return
+			}
+			if !ack {
+				errorCh <- fmt.Errorf("peer disagrees")
+			}
+		}(brokerID, brokerAddr)
+	}
+
+	wg.Wait()
+
+	fmt.Println("Abort Done")
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------
+
+func (brpc *BrokerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
+
+	v, exist := broker.transactionCache.Get(msg.Hash())
+	if exist {
+		s, ok := v.(State)
+		if !ok {
+			return fmt.Errorf("Couldn't typecast interface value: %v to State", s)
+		}
+		if s == COMMIT || s == PREPARE {
+			*state = s
+			return nil
+		}
+	}
+
+	// return err and set Transaction Cache as Abort on unwanted cases
+
+	// peerManagerID := ManagerNodeID(msg.ID)
+	// manager.ManagerMutex.Lock()
+	// defer manager.ManagerMutex.Unlock()
+	// if _, exist := manager.ManagerPeers[peerManagerID]; exist {
+	// *state = ABORT
+	// 	manager.TransactionCache.Add(msg.Hash(), ABORT)
+	// 	return nil
+	// }
+
+	broker.transactionCache.Add(msg.Hash(), APPROVE)
+	*state = APPROVE
+	return nil
+}
+
+func (brpc *BrokerRPCServer) PreCommitRPC(msg *m.Message, ack *bool) error {
+	*ack = false
+	broker.transactionCache.Add(msg.Hash(), PREPARE)
+	*ack = true
+	return nil
+}
+
+func (brpc *BrokerRPCServer) AbortRPC(msg *m.Message, ack *bool) error {
+	*ack = true
+	broker.transactionCache.Add(msg.Hash(), ABORT)
+	return nil
+}
+
+func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack *bool) error {
+	partition := &Partition{
+		TopicName:      message.Topic,
+		PartitionIdx:   message.PartitionIdx,
+		ReplicationNum: uint8(message.ReplicaNum),
+		Partitions:     message.Partitions,
+		Role:           ROLE(message.Role),
+		LeaderIP:       broker.brokerAddr,
+		Followers:      make(map[BrokerNodeID]net.Addr),
+	}
+
+	broker.partitionMu.Lock()
+	broker.partitionMap[PartitionID(partition.HashString())] = partition
+	broker.partitionMu.Unlock()
+
+	fmt.Println("Successfully Added Partition")
+
+	*ack = true
+	return nil
+}
+
+//---------------------------------------------------------------------------------------------------------
 
 func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{}, reply interface{}) error {
 	rpcCall := rpcClient.Go(serviceMethod, args, reply, nil)
@@ -663,34 +846,7 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 	return nil
 }
 
-func (bs *BrokerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
-	*ack = false
-
-	delPeerID := ManagerNodeID(msg.ID)
-
-	var newPeerAddr  = map[ManagerNodeID]net.Addr{}
-
-	manager.ManagerMutex.Lock()
-	for k, v := range manager.ManagerPeers {
-		if k == delPeerID {
-			continue
-		}
-		newPeerAddr[k] = v
-	}
-	manager.ManagerMutex.Unlock()
-
-	if err := bs.threePC("DeletePeer", msg, newPeerAddr); err != nil {
-		return err
-	}
-
-	*ack = true
-	return nil
-}
-
-
-
-
-func NewConnectionErr(nodeID NodeID, addr net.Addr, err error) *ConnectionErr {
+func NewConnectionErr(nodeID BrokerNodeID, addr net.Addr, err error) *ConnectionErr {
 	return &ConnectionErr{
 		Addr:   addr,
 		NodeID: nodeID,
@@ -721,4 +877,55 @@ func NewRPCTimedout(serviceMethod string) *RPCTimedout {
 
 func (e *RPCTimedout) Error() string {
 	return fmt.Sprintf("rpc call: %v has timed out", e.ServiceMethod)
+}
+
+func NewAgreementErr(msg string) *AgreementErr {
+	return &AgreementErr{
+		msg: msg,
+	}
+}
+
+func (e *AgreementErr) Error() string {
+	return fmt.Sprintf("node disagress - %v", e.msg)
+}
+
+func NewRecoveryErr(err error) *RecoveryErr {
+	return &RecoveryErr{
+		Err: err,
+	}
+}
+
+func (e *RecoveryErr) Error() string {
+	return fmt.Sprintf("reovery error - %v", e.Err)
+}
+
+func NewAbortErr(err error) *AbortErr {
+	return &AbortErr{
+		Err: err,
+	}
+}
+
+func (e *AbortErr) Error() string {
+	return fmt.Sprintf("abort error - %v", e.Err)
+}
+
+func NewTimeoutErr(nodeID BrokerNodeID, addr net.Addr, err error) *TimeoutErr {
+	return &TimeoutErr{
+		Addr:   addr,
+		NodeID: nodeID,
+		Err:    err,
+	}
+}
+
+func (e *TimeoutErr) Error() string {
+	return fmt.Sprintf("connection timed out - %v - %v: %v", e.NodeID, e.Addr.String(), e.Err)
+}
+
+func (p *Partition) HashString() string {
+	var buf = []byte{}
+	buf = append(buf, []byte(p.TopicName)...)
+	buf = append(buf, []byte(strconv.FormatUint(uint64(p.PartitionIdx), 10))...)
+
+	hash := sha1.Sum(buf)
+	return string(hash[:])
 }
