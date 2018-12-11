@@ -132,6 +132,7 @@ var config configSetting
 // reads from config before booting 'shell'
 func init() {
 	readConfigJSON(os.Args[1])
+	createNewTopic("test", 2, 2)
 }
 
 /* readConfigJSON
@@ -190,7 +191,7 @@ var cmds = map[string]func(...string) error{
 			return errInvalidArgs
 		}
 
-		getLeader(topic, uint8(partition))
+		getLeader(topic, uint8(partition), true)
 		return
 	},
 	"GetTopicList": func(args ...string) (err error) {
@@ -270,6 +271,12 @@ var ips = make(map[topicPartition]string)
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
 
+func tryAndGetLeaderIP(topic string, partitionNumber uint8) {
+	if _, ok := ips[topicPartition{topic, partitionNumber}]; !ok {
+		getLeader(topic, partitionNumber, false)
+	}
+}
+
 func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
@@ -306,7 +313,7 @@ func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	fmt.Printf("Successfully created topic %s with %d partitions\n", topic, partitionNumber)
 }
 
-func getLeader(topic string, partitionNumber uint8) {
+func getLeader(topic string, partitionNumber uint8, verbose bool) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -329,7 +336,10 @@ func getLeader(topic string, partitionNumber uint8) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Got leader: %v\n", response)
+	ips[topicPartition{topic, uint8(partitionNumber)}] = response
+	if verbose {
+		fmt.Printf("Got leader: %v\n", response)
+	}
 }
 
 func getTopicList() {
@@ -366,6 +376,7 @@ func getTopicList() {
 }
 
 func publishMessage(topic string, partitionNumber uint8, text string) {
+	tryAndGetLeaderIP(topic, partitionNumber)
 	leaderIP := ips[topicPartition{topic, partitionNumber}]
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
@@ -395,6 +406,7 @@ func publishMessage(topic string, partitionNumber uint8, text string) {
 }
 
 func subscribe(topic string, partitionNumber uint8) {
+	tryAndGetLeaderIP(topic, partitionNumber)
 	leaderIP := ips[topicPartition{topic, partitionNumber}]
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
@@ -445,6 +457,7 @@ func subscribe(topic string, partitionNumber uint8) {
 }
 
 func consumeAt(topic string, partitionNumber uint8, index int) {
+	tryAndGetLeaderIP(topic, partitionNumber)
 	leaderIP := ips[topicPartition{topic, partitionNumber}]
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
