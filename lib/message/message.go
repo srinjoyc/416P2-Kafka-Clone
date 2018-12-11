@@ -39,6 +39,7 @@ type Message struct {
 	ID         string
 	Type       OPCODE
 	Text       string
+	Payload		[]byte
 	Topic      string
 	Partitions	uint8
 	PartitionIdx  uint8
@@ -54,6 +55,7 @@ func (m *Message) Hash() [sha1.Size]byte {
 
 	buf = append(buf, []byte(m.ID)...)
 	buf = append(buf, []byte(m.Text)...)
+	buf = append(buf, m.Payload...)
 	buf = append(buf, []byte(m.Topic)...)
 	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Partitions), 10))...)
 	buf = append(buf, []byte(strconv.FormatUint(uint64(m.Role), 10))...)
