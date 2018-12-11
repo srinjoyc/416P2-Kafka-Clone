@@ -228,6 +228,9 @@ func (node *fdNode) StartResponding(LocalIpPort string) (err error) {
 				}
 				log.Printf("Received a heartbeat from RemoteIpPort: %s, with data: %v\n", remoteUDPAddr.String(), hBeat)
 
+				// Wait for 2 seconds so our RTT calculations don't go to zero on localhost.
+				time.Sleep(3 * time.Second)
+
 				// Create a new response ack.
 				ack := createResponseAck(hBeat)
 
@@ -542,11 +545,9 @@ func (monitor *monitor) startMonitoring() (err error) {
 					// Only send into ackchan if its non-nil, i.e. we are still monitoring.
 					// Ackchan is accessed from two goroutines which modify its nil/non-nil state;
 					// we should use a mutex for this case.
-					monitor.mut.Lock()
 					if ackChan != nil {
 						ackChan <- ack
 					}
-					monitor.mut.Unlock()
 				}
 			}
 		}
@@ -584,9 +585,7 @@ func (monitor *monitor) startMonitoring() (err error) {
 				// End this goroutine by closing stopMonitoringChan, but first set ackChan
 				// to nil so we don't accidentally process one more ACK.
 				// We need to use a mutex here to avoid a data race when setting ackChan to nil.
-				monitor.mut.Lock()
 				ackChan = nil
-				monitor.mut.Unlock()
 				monitor.stopMonitoring()
 
 				// Send failure notification.
@@ -596,11 +595,12 @@ func (monitor *monitor) startMonitoring() (err error) {
 					UDPIpPort: monitor.remoteUDPAddr.String(),
 					Timestamp: time.Now(),
 				}
-			} else {
-				// Otherwise, send another heartbeat.
-				err := monitor.sendHBeat(conn)
-				checkError(err)
+				monitor.setLostMsgs(0)
+				return
 			}
+			// Otherwise, send another heartbeat.
+			err := monitor.sendHBeat(conn)
+			checkError(err)
 
 		case ack := <-ackChan:
 			// We received the correct ack!
@@ -639,6 +639,6 @@ func (monitor *monitor) startMonitoring() (err error) {
 }
 
 func (monitor *monitor) stopMonitoring() {
-	close(monitor.stopMonitoringChan)
 	close(monitor.stopPollingConnChan)
+	close(monitor.stopMonitoringChan)
 }
