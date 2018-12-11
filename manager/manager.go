@@ -658,6 +658,8 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	errorCh := make(chan error, 1)
 	manager.ManagerMutex.Lock()
 
+	fmt.Println(msg)
+
 	fmt.Println("Break 1")
 	
 	fmt.Println("Break 2")
@@ -707,9 +709,11 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 		wg.Wait()
 	}()
 
+	fmt.Println("Break 4")
+
 	select {
 	case err := <-errorCh:
-		fmt.Println()
+		fmt.Println(err)
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
 		manager.ManagerMutex.Unlock()
 		fmt.Println("Abort Transaction")
@@ -719,9 +723,11 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 		fmt.Println("CanCommitPhase Done")
 	}
 
+	fmt.Println("Break 5")
+
 	manager.ManagerMutex.Unlock()
 
-	fmt.Println("Break 4")
+	fmt.Println("Break 6")
 
 	// Local canCommit
 	method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("CanCommitRPC"))
