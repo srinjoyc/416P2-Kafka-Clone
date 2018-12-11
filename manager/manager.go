@@ -99,7 +99,7 @@ type Partition struct {
 	TopicName    string
 	PartitionIdx uint8
 	LeaderNodeID BrokerNodeID
-	FollowerIPs	map[BrokerNodeID]string
+	FollowerIPs  map[BrokerNodeID]string
 }
 
 type Topic struct {
@@ -894,7 +894,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		// response.Ack = true
 
 		topic := &Topic{
-			TopicName: request.Topic,
+			TopicName:  request.Topic,
 			Partitions: []*Partition{},
 		}
 
@@ -935,17 +935,17 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 				rpcClient, err := vrpc.RPCDial("tcp", leaderAddr, logger, loggerOptions)
 				if err != nil {
-					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+					errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
 				}
 				var ack bool
 				if err := RpcCallTimeOut(rpcClient, "BrokerRPCServer.CreateNewPartition", request, &ack); err != nil {
-					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID),leaderAddr, err)
+					errorCh <- NewTimeoutErr(ManagerNodeID(leaderNodeID), leaderAddr, err)
 				}
 
 				partition.LeaderNodeID = leaderNodeID
 				partition.FollowerIPs = map[BrokerNodeID]string{}
 
-				for k, v := range followerAddrMap{
+				for k, v := range followerAddrMap {
 					partition.FollowerIPs[BrokerNodeID(k)] = v
 				}
 
@@ -976,13 +976,18 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 		//Add to own and broadcast
 
-
 	}
 
 	// printTopicMap()
 
 	return nil
 }
+
+//TODO:
+func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) error { return nil }
+
+//TODO:
+func (mrpc *ManagerRPCServer) PublishMessage(request *m.Message, ack *bool) error { return nil }
 
 func getHashingNodes(key string, replicaCount int) []string {
 	var list []string
