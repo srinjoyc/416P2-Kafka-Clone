@@ -927,6 +927,13 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 				leaderNodeID := BrokerNodeID(nodeIDs[0])
 				leaderAddr := manager.BrokerNodes[leaderNodeID]
 
+				println("-------------")
+				println("topic:", request.Topic)
+				println("LeaderIP:", nodeIDs[0])
+				fmt.Printf("FollowerIP: %v\n", nodeIDs[1:])
+				println("PartitionNum:", request.Partitions)
+				println("-------------")
+
 				defer func() {
 					if p := recover(); p != nil {
 						errorCh <- NewConnectionErr(ManagerNodeID(leaderNodeID), leaderAddr, fmt.Errorf("%v", p))
@@ -951,6 +958,9 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 				}
 
 				topic.Partitions = append(topic.Partitions, partition)
+
+				manager.TopicMap[request.Topic] = *topic
+
 			}(i)
 		}
 
@@ -989,6 +999,12 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 	return nil
 }
+
+//TODO:
+func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) error { return nil }
+
+//TODO:
+func (mrpc *ManagerRPCServer) PublishMessage(request *m.Message, ack *bool) error { return nil }
 
 func getHashingNodes(key string, replicaCount int) []string {
 	var list []string
