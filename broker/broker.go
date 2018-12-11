@@ -684,15 +684,19 @@ func (brpc *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAd
 		fmt.Println("Commit Phase Done")
 	}
 
+
 	// Local Commit
 	var ack bool
+
 	method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
+
 
 	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
 		brpc.abort(msg, peerAddrs)
 		broker.transactionCache.Add(msg.Hash(), ABORT)
 		return fmt.Errorf("coordinator failed: transaction aborted: %v", err)
 	}
+
 	broker.transactionCache.Add(msg.Hash(), COMMIT)
 
 	return nil
@@ -961,21 +965,27 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 }
 
 func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) error {
+
 	if request.Type == m.CONSUME_MESSAGE {
+
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
+
 		partition, ok := broker.partitionMap[indexID]
+
 		// not found topic or partition
 		if !ok || request.Index > partition.LastContentIndex {
 			response.Index = partition.LastContentIndex
 			response.Text = "Topic/Partition/Index not found"
 			return nil
 		}
+
 		response.Index = partition.LastContentIndex
 		//fileName := basicIO.Sendfile(,config.BrokerNodeID + "_" + indexID)
 		println("Read from " + partition.TopicName)
 		// do stuff here to get the payload from disk
 		response.Payload = []byte(partition.Contents[request.Index])
 	}
+
 	return nil
 }
 

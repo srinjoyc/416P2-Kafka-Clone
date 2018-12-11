@@ -91,7 +91,6 @@ func registerBrokerWithManager() error {
 		if BrokerNodeID(k) == broker.brokerNodeID{
 			continue
 		}
-
 		broker.brokerPeers[BrokerNodeID(k)] = v
 	}
 
@@ -122,7 +121,7 @@ func main() {
 
 func checkError(err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(os.Stdout, err.Error())
 		os.Exit(1)
 	}
 }

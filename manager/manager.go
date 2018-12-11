@@ -642,10 +642,8 @@ func (mrpc *ManagerRPCServer) recoverPhase(serviceMethod string, msg *m.Message,
 func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) (map[ManagerNodeID]State, error) {
 	// canCommitPhase
 	fmt.Println("CanCommitPhase")
-
 	v, exist := manager.TransactionCache.Get(msg.Hash())
 	var s State
-
 	if exist {
 		s, ok := v.(State)
 		if !ok {
@@ -656,10 +654,13 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	}
 	peerTransactionState := make(map[ManagerNodeID]State)
 	peerTransactionState[manager.ManagerNodeID] = s
-
 	var wg sync.WaitGroup
 	errorCh := make(chan error, 1)
 	manager.ManagerMutex.Lock()
+
+	fmt.Println("Break 1")
+	
+	fmt.Println("Break 2")
 
 	for managerID, managerPeer := range peerAddrs {
 		wg.Add(1)
@@ -693,6 +694,8 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 
 	manager.TransactionCache.Add(msg.Hash(), WAIT)
 
+	fmt.Println("Break 3")
+
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
@@ -711,6 +714,8 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	}
 
 	manager.ManagerMutex.Unlock()
+
+	fmt.Println("Break 4")
 
 	// Local canCommit
 	method := reflect.ValueOf(mrpc).MethodByName(fmt.Sprintf("CanCommitRPC"))
