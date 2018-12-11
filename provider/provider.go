@@ -3,11 +3,9 @@ package main
 // This is a sample client cli program
 
 import (
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"time"
 
@@ -24,7 +22,6 @@ type configSetting struct {
 }
 
 var config configSetting
-
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
 
@@ -43,36 +40,41 @@ func readConfigJSON(configFile string) {
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
 }
 
+//
+func init() {
+	readConfigJSON(os.Args[1])
+}
+
 /* provideMsg
  * para message string
  *
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, outgoing message.Message) error {
-	conn, err := net.Dial("tcp", remoteIPPort)
-	if err != nil {
-		println("Fail to connect kafka manager" + remoteIPPort)
-		return err
-	}
-	defer conn.Close()
+// func provideMsg(remoteIPPort string, outgoing message.Message) error {
+// 	conn, err := net.Dial("tcp", remoteIPPort)
+// 	if err != nil {
+// 		println("Fail to connect kafka manager" + remoteIPPort)
+// 		return err
+// 	}
+// 	defer conn.Close()
 
-	// send message
-	enc := gob.NewEncoder(conn)
-	err = enc.Encode(outgoing)
-	if err != nil {
-		log.Fatal("encode error:", err)
-	}
+// 	// send message
+// 	enc := gob.NewEncoder(conn)
+// 	err = enc.Encode(outgoing)
+// 	if err != nil {
+// 		log.Fatal("encode error:", err)
+// 	}
 
-	// response
-	dec := gob.NewDecoder(conn)
-	response := &message.Message{}
-	dec.Decode(response)
-	fmt.Println(response)
-	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
+// 	// response
+// 	dec := gob.NewDecoder(conn)
+// 	response := &message.Message{}
+// 	dec.Decode(response)
+// 	fmt.Println(response)
+// 	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
-	return nil
-}
+// 	return nil
+// }
 
 // /* provideMsgToKafka
 //  * para message string
@@ -150,10 +152,6 @@ func provideMsg(remoteIPPort string, outgoing message.Message) error {
 // 	}
 // }
 
-func initialize() {
-	readConfigJSON(os.Args[1])
-}
-
 func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
@@ -183,8 +181,6 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 }
 
 func main() {
-	initialize()
-
 	// if os.Args[2] == "shell" {
 	// 	shell()
 	// } else if os.Args[2] == "createtopic" {
