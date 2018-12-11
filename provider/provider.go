@@ -4,12 +4,13 @@ package main
 
 import (
 	"bufio"
-	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"../lib/IOlib"
@@ -27,9 +28,52 @@ type configSetting struct {
 }
 
 var config configSetting
-
 var logger *govec.GoLog
 var loggerOptions govec.GoLogOptions
+var errInvalidArgs = errors.New("invalid arguments")
+
+// possible cmds that the shell can perform
+var cmds = map[string]func(...string) error{
+	"CreateNewTopic": func(args ...string) (err error) {
+		if len(args) != 3 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// num partitions should be second arg
+		numPartitions, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		// num replicas should be third arg
+		numReplicas, err := strconv.Atoi(args[2])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		createNewTopic(topic, uint8(numPartitions), numReplicas)
+		return nil
+	},
+	"GetLeader": func(args ...string) error {
+		if len(args) != 2 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// partition number should be second arg
+		partitionNum, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+		getLeader(topic, uint8(partitionNum))
+		return nil
+	},
+}
 
 /* readConfigJSON
  * Desc:
@@ -46,36 +90,41 @@ func readConfigJSON(configFile string) {
 	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
 }
 
+// reads from config before booting 'shell'
+func init() {
+	readConfigJSON(os.Args[1])
+}
+
 /* provideMsg
  * para message string
  *
  * Desc:
  * 		send the message to kafka node by remoteIPPort
  */
-func provideMsg(remoteIPPort string, outgoing message.Message) error {
-	conn, err := net.Dial("tcp", remoteIPPort)
-	if err != nil {
-		println("Fail to connect kafka manager" + remoteIPPort)
-		return err
-	}
-	defer conn.Close()
+// func provideMsg(remoteIPPort string, outgoing message.Message) error {
+// 	conn, err := net.Dial("tcp", remoteIPPort)
+// 	if err != nil {
+// 		println("Fail to connect kafka manager" + remoteIPPort)
+// 		return err
+// 	}
+// 	defer conn.Close()
 
-	// send message
-	enc := gob.NewEncoder(conn)
-	err = enc.Encode(outgoing)
-	if err != nil {
-		log.Fatal("encode error:", err)
-	}
+// 	// send message
+// 	enc := gob.NewEncoder(conn)
+// 	err = enc.Encode(outgoing)
+// 	if err != nil {
+// 		log.Fatal("encode error:", err)
+// 	}
 
-	// response
-	dec := gob.NewDecoder(conn)
-	response := &message.Message{}
-	dec.Decode(response)
-	fmt.Println(response)
-	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
+// 	// response
+// 	dec := gob.NewDecoder(conn)
+// 	response := &message.Message{}
+// 	dec.Decode(response)
+// 	fmt.Println(response)
+// 	fmt.Printf("Response : {kID:%s, status:%s}\n", response.ID, response.Text)
 
-	return nil
-}
+// 	return nil
+// }
 
 // /* provideMsgToKafka
 //  * para message string
@@ -106,10 +155,6 @@ func provideMsg(remoteIPPort string, outgoing message.Message) error {
 // }
 
 // func shell() {
-// 	// terminal controller like shell
-// 	println("*******************")
-// 	println("* Instuction: there are several kinds of operations\n* msg: upload the message into connected kafka nodes\n* file: upload the file to connected nodes")
-// 	println("*******************")
 // 	reader := bufio.NewReader(os.Stdin)
 // 	for {
 // 		print("cmd: ")
@@ -153,11 +198,7 @@ func provideMsg(remoteIPPort string, outgoing message.Message) error {
 // 	}
 // }
 
-func initialize() {
-	readConfigJSON(os.Args[1])
-}
-
-func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
+func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -185,7 +226,7 @@ func CreateNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	fmt.Printf("Success: %v\n", response.IPs)
 }
 
-func GetLeader(topic string, partitionNumber uint8) (leaderIP string) {
+func getLeader(topic string, partitionNumber uint8) (leaderIP string) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
@@ -239,43 +280,41 @@ func PublishMessage(topic string, partitionNumber uint8, text string, leaderIP s
 }
 
 func main() {
-	initialize()
-
-	// if os.Args[2] == "shell" {
-	// 	shell()
-	// } else if os.Args[2] == "createtopic" {
-	// 	if len(os.Args) != 4 {
-	// 		println("Incorrect Format: go run provider.go [config] createtopic [topic]")
-	// 		return
-	// 	}
-	// 	createTopicInKafka(os.Args[3])
-	// } else if os.Args[2] == "appendmessage" {
-	// 	if len(os.Args) != 6 {
-	// 		println("Incorrect Format: go run provider.go [config] appendmessage [topic] [partition] [message]")
-	// 		return
-	// 	}
-
-	// 	//provideMsgToKafka(topic, partition, message)
-	// }
-
-	// topic := os.Args[3]
-	// argMsg := os.Args[5]
-	// // send msg
-	// msg := message.Message{config.ProviderID, message.NEW_TOPIC, argMsg, topic, 0, message.PROVIDER, time.Now()}
-	// provideMsg(config.KafkaManagerIPPorts[0], msg)
-	shell()
+	runShell()
 }
 
-func shell() {
+func runShell() {
+	// start our "shell" in a polling loop
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		cmd, _ := reader.ReadString('\n')
-		if cmd == "CreateNewTopic\n" {
-			CreateNewTopic("QQQ", 1, 2)
-		} else if cmd == "GetLeader\n" {
-			leaderIP = GetLeader("QQQ", 0)
-		} else if cmd == "PublishMessage\n" {
-			PublishMessage("QQQ", 0, "HELLO WORLD!", leaderIP)
+
+		// read the entire string user typed
+		fullCmd, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		// trim off trailing newline
+		fullCmd = fullCmd[:len(fullCmd)-1]
+
+		// seperate string by spaces so we can parse arguments
+		seperated := strings.Split(fullCmd, " ")
+		if len(seperated) < 2 {
+			fmt.Println("invalid command")
+			continue
+		}
+
+		// handle the command with provided arguments
+		cmd, args := seperated[0], seperated[1:]
+		if cmdHandler, ok := cmds[cmd]; ok {
+			if err := cmdHandler(args...); err != nil {
+				fmt.Println(err)
+				continue
+			}
+		} else {
+			fmt.Println("invalid command")
+			continue
 		}
 	}
 }

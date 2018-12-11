@@ -848,3 +848,8 @@ func (p *Partition) HashString() string {
 	hash := sha1.Sum(buf)
 	return string(hash[:])
 }
+
+/* Provider / Consumer services */
+// TODO:
+func (mrpc *BrokerRPCServer) PublishMessage(request *m.Message, ack *bool) error { return nil }
+func (mrpc *BrokerRPCServer) ConsumeMessage(request *m.Message, ack *bool) error { return nil }
