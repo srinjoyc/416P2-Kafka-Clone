@@ -816,6 +816,24 @@ func (mrpc *ManagerRPCServer) GetManagerRPC(nodeID ManagerNodeID, node *ManagerN
 	return nil
 }
 
+func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error{
+	*ack = false
+
+	var topic Topic
+
+	if err := json.Unmarshal(msg.Payload, &topic); err!=nil{
+		fmt.Println(err)
+		return err
+	}
+
+	manager.TopicMutex.Lock()
+	manager.TopicMap[msg.Topic] = topic
+	manager.TopicMutex.Unlock()
+
+	*ack = true
+	return nil
+}
+
 // func (mrpc *ManagerRPCServer) CommitNewTopicRPC(msg *m.Message, ack *bool) error {
 // 	fmt.Println("CommitNewTopicRPC")
 // 	*ack = false
@@ -964,6 +982,9 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 			}(i)
 		}
 
+
+
+
 		c := make(chan struct{})
 		go func() {
 			defer close(c)
@@ -972,8 +993,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 		select {
 		case err := <-errorCh:
-
-			//TODO Handle Broker Node connection failure
+			//TODOs:Handle Broker Node connection failure
 			fmt.Println(err)
 			switch err.(type) {
 			case *TimeoutErr:
@@ -984,6 +1004,28 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		case <-c:
 			fmt.Println("Done")
 		}
+
+		data, err := json.Marshal(topic)
+
+		if err != nil{
+			return err
+		}
+
+		payloadMsg := &m.Message{
+			Payload:   data,
+			Proposer:  string(manager.ManagerNodeID),
+			Timestamp: time.Now(),
+		}
+
+		
+		if err := mrpc.threePC("AddTopic", payloadMsg, manager.ManagerPeers); err!=nil{
+			fmt.Println(err)
+			// TODOs: Handle Error
+			return err
+		}
+
+
+
 
 		// dec := gob.NewDecoder(&buf) // Will read from network.
 
