@@ -944,6 +944,8 @@ func (mrpc *ManagerRPCServer) abort(msg *m.Message, peerAddrs map[ManagerNodeID]
 //-----------------------------------------------------------------------------------------------------------------------------
 
 func (mrpc *ManagerRPCServer) CanCommitRPC(msg *m.Message, state *State) error {
+	fmt.Println("can commit RPC")
+
 	v, exist := manager.TransactionCache.Get(msg.Hash())
 	if exist {
 		s, ok := v.(State)
