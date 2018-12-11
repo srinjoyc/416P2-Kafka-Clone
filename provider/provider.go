@@ -1,98 +1,5 @@
 package main
 
-// This is a sample client cli program
-
-import (
-	"bufio"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"log"
-	"os"
-	"strconv"
-	"strings"
-	"time"
-
-	"../lib/IOlib"
-	message "../lib/message"
-
-	"github.com/DistributedClocks/GoVector/govec"
-	"github.com/DistributedClocks/GoVector/govec/vrpc"
-)
-
-type configSetting struct {
-	ProviderID          string
-	KafkaManagerIPPorts string
-}
-
-var config configSetting
-var logger *govec.GoLog
-var loggerOptions govec.GoLogOptions
-var errInvalidArgs = errors.New("invalid arguments")
-
-// possible cmds that the shell can perform
-var cmds = map[string]func(...string) error{
-	"CreateNewTopic": func(args ...string) (err error) {
-		if len(args) != 3 {
-			return errInvalidArgs
-		}
-
-		// topic should be first arg
-		topic := args[0]
-
-		// num partitions should be second arg
-		numPartitions, err := strconv.Atoi(args[1])
-		if err != nil {
-			return errInvalidArgs
-		}
-
-		// num replicas should be third arg
-		numReplicas, err := strconv.Atoi(args[2])
-		if err != nil {
-			return errInvalidArgs
-		}
-
-		createNewTopic(topic, uint8(numPartitions), numReplicas)
-		return nil
-	},
-	"GetLeader": func(args ...string) error {
-		if len(args) != 2 {
-			return errInvalidArgs
-		}
-
-		// topic should be first arg
-		topic := args[0]
-
-		// partition number should be second arg
-		partitionNum, err := strconv.Atoi(args[1])
-		if err != nil {
-			return errInvalidArgs
-		}
-		getLeader(topic, uint8(partitionNum))
-		return nil
-	},
-}
-
-/* readConfigJSON
- * Desc:
- *		read the configration from file into struct config
- * @para configFile: relative url of file of configuration
- * @retrun: None
- */
-func readConfigJSON(configFile string) {
-	jsonFile, err := os.Open(configFile)
-	defer jsonFile.Close()
-	if err != nil {
-		fmt.Println(err) // if we os.Open returns an error then handle it
-	}
-	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
-}
-
-// reads from config before booting 'shell'
-func init() {
-	readConfigJSON(os.Args[1])
-}
-
 /* provideMsg
  * para message string
  *
@@ -195,15 +102,157 @@ func init() {
 // 		}
 // 	}
 // }
+// This is a sample client cli program
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"../lib/IOlib"
+	message "../lib/message"
+
+	"github.com/DistributedClocks/GoVector/govec"
+	"github.com/DistributedClocks/GoVector/govec/vrpc"
+)
+
+type configSetting struct {
+	ProviderID          string
+	KafkaManagerIPPorts string
+}
+
+var config configSetting
+
+// reads from config before booting 'shell'
+func init() {
+	readConfigJSON(os.Args[1])
+}
+
+/* readConfigJSON
+ * Desc:
+ *		read the configration from file into struct config
+ * @para configFile: relative url of file of configuration
+ * @retrun: None
+ */
+func readConfigJSON(configFile string) {
+	jsonFile, err := os.Open(configFile)
+	defer jsonFile.Close()
+	if err != nil {
+		fmt.Println(err) // if we os.Open returns an error then handle it
+	}
+	json.Unmarshal([]byte(IOlib.ReadFileByte(configFile)), &config)
+}
+
+var errInvalidArgs = errors.New("invalid arguments")
+
+// possible cmds that the shell can perform
+var cmds = map[string]func(...string) error{
+	"CreateNewTopic": func(args ...string) (err error) {
+		if len(args) != 3 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// num partitions should be second arg
+		numPartitions, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		// num replicas should be third arg
+		numReplicas, err := strconv.Atoi(args[2])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		createNewTopic(topic, uint8(numPartitions), numReplicas)
+		return
+	},
+	"GetTopicList": func(args ...string) (err error) {
+		getTopicList()
+		return
+	},
+	"Publish": func(args ...string) (err error) {
+		if len(args) != 3 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// partition number should be second arg
+		partitionNum, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		// message text should be third arg
+		text := args[2]
+
+		publishMessage(topic, uint8(partitionNum), text)
+		return
+	},
+	"Subscribe": func(args ...string) (err error) {
+		if len(args) != 2 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// partition number should be second arg
+		partitionNum, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		subscribe(topic, uint8(partitionNum))
+		return
+	},
+	"ConsumeAt": func(args ...string) (err error) {
+		if len(args) != 3 {
+			return errInvalidArgs
+		}
+
+		// topic should be first arg
+		topic := args[0]
+
+		// partition number should be second arg
+		partitionNum, err := strconv.Atoi(args[1])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		// index at which to consume should be third arg
+		index, err := strconv.Atoi(args[2])
+		if err != nil {
+			return errInvalidArgs
+		}
+
+		consumeAt(topic, uint8(partitionNum), uint8(index))
+		return
+	},
+}
+
+var logger *govec.GoLog
+var loggerOptions govec.GoLogOptions
 
 func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
-
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	var response message.Message
 	err = client.Call("ManagerRPCServer.CreateNewTopic",
 		message.Message{
@@ -224,14 +273,18 @@ func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 	fmt.Printf("Success: %v\n", response.IPs)
 }
 
-func getLeader(topic string, partitionNumber uint8) {
+func getTopicList() {
+	return
+}
+
+func publishMessage(topic string, partitionNumber uint8, text string) {
 	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
 	loggerOptions = govec.GetDefaultLogOptions()
 	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
-
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	var response string
 	err = client.Call("ManagerRPCServer.GetLeader",
 		message.Message{
@@ -246,6 +299,41 @@ func getLeader(topic string, partitionNumber uint8) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Printf("Success: %v\n", response)
+}
+
+func subscribe(topic string, partitionNumber uint8) {
+	return
+}
+
+func consumeAt(topic string, partitionNumber uint8, index uint8) {
+	return
+}
+
+// getLeader is a helper
+func getLeader(topic string, partitionNumber uint8) {
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", config.KafkaManagerIPPorts, logger, loggerOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var response string
+	err = client.Call("ManagerRPCServer.GetLeader",
+		message.Message{
+			ID:           config.ProviderID,
+			Type:         message.GET_LEADER,
+			Topic:        topic,
+			Role:         message.PROVIDER,
+			Timestamp:    time.Now(),
+			PartitionIdx: partitionNumber,
+		},
+		&response)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	fmt.Printf("Success: %v\n", response)
 }
 
@@ -277,9 +365,20 @@ func main() {
 
 func runShell() {
 	// start our "shell" in a polling loop
+	fmt.Printf(`
+Hi! Possible commands:
+
+	> CreateNewTopic <topicName> <numPartitions> <numReplicas>
+	> GetTopicList
+	> Publish <topicName> <partitionNum> <message>
+	> Subscribe <topicName> <partitionNum>
+	> ConsumeAt <topicName> <partitionNum> <index>
+
+`)
 	reader := bufio.NewReader(os.Stdin)
 	for {
 
+		fmt.Printf("> ")
 		// read the entire string user typed
 		fullCmd, err := reader.ReadString('\n')
 		if err != nil {
