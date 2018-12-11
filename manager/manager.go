@@ -12,9 +12,9 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 
 	m "../lib/message"
 	lru "github.com/hashicorp/golang-lru"
@@ -305,10 +305,7 @@ func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 	*ack = false
 	delPeerID := ManagerNodeID(msg.ID)
 
-
 	var newPeerAddr = map[ManagerNodeID]string{}
-
-
 
 	manager.ManagerMutex.Lock()
 	for k, v := range manager.ManagerPeers {
@@ -319,7 +316,6 @@ func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 	}
 	manager.ManagerMutex.Unlock()
 
-	
 	for _, addr := range manager.BrokerNodes {
 		rpcClient, err := vrpc.RPCDial("tcp", addr, logger, loggerOptions)
 		defer rpcClient.Close()
@@ -333,8 +329,6 @@ func (mrpc *ManagerRPCServer) DeletePeer(msg *m.Message, ack *bool) error {
 			return err
 		}
 	}
-
-
 
 	if err := mrpc.threePC("DeletePeer", msg, newPeerAddr); err != nil {
 		switch err.(type) {
@@ -385,7 +379,7 @@ func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, response *m.Message) err
 		ipList = append(ipList, v)
 	}
 	manager.ManagerMutex.Unlock()
-	
+
 	response.Text = strings.Join(ipList, ",")
 
 	return nil
@@ -529,7 +523,7 @@ func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peer
 	peerTransactionState, err := mrpc.canCommit(serviceMethod, msg, peerAddrs)
 
 	if err != nil {
-				switch err.(type) {
+		switch err.(type) {
 		case *TimeoutErr:
 			// connErr := err.(*ConnectionErr)
 
@@ -1150,7 +1144,7 @@ func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) er
 	if request.Type == m.GET_LEADER {
 		requestedTopic, ok := manager.TopicMap[request.Topic]
 		// not found topic name
-		if !ok || int(request.PartitionIdx) >= len(requestedTopic.Partitions)-1 {
+		if !ok || int(request.PartitionIdx) > len(requestedTopic.Partitions)-1 {
 			*response = "No leader for that topic/partition."
 			return nil
 		}

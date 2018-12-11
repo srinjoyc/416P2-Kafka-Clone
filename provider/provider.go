@@ -129,9 +129,12 @@ type configSetting struct {
 
 var config configSetting
 
+var seenMessages map[string]bool
+
 // reads from config before booting 'shell'
 func init() {
 	readConfigJSON(os.Args[1])
+	seenMessages = make(map[string]bool)
 	//createNewTopic("test", 2, 2)
 }
 
@@ -232,7 +235,7 @@ var cmds = map[string]func(...string) error{
 			return errInvalidArgs
 		}
 
-		subscribe(topic, uint8(partitionNum))
+		go subscribe(topic, uint8(partitionNum))
 		return
 	},
 	"ConsumeAt": func(args ...string) (err error) {
@@ -416,47 +419,99 @@ func subscribe(topic string, partitionNumber uint8) {
 	}
 
 	var latestIndex int
-	err = client.Call("BrokerRPCServer.GetLatestIndex",
-		message.Message{
-			ID:           config.ProviderID,
-			Type:         message.GET_LATEST_INDEX,
-			Topic:        topic,
-			Role:         message.PROVIDER,
-			Timestamp:    time.Now(),
-			PartitionIdx: partitionNumber,
-			Proposer:     config.ProviderID,
-		},
-		&latestIndex)
-	if err != nil {
-		fmt.Printf("Failed to subscribe\n")
-		return
-	}
-
+	ticker := time.NewTicker(3 * time.Second)
 	go func() {
-		for {
-			var response message.Message
-			err = client.Call("BrokerRPCServer.ConsumeAt",
+		for range ticker.C {
+			err = client.Call("BrokerRPCServer.GetLatestIndex",
 				message.Message{
 					ID:           config.ProviderID,
-					Type:         message.CONSUME_MESSAGE,
+					Type:         message.GET_LATEST_INDEX,
 					Topic:        topic,
 					Role:         message.PROVIDER,
 					Timestamp:    time.Now(),
 					PartitionIdx: partitionNumber,
-					Index:        latestIndex,
+					Proposer:     config.ProviderID,
 				},
-				&response)
+				&latestIndex)
 			if err != nil {
-				fmt.Printf("Failed to consume data from index %d\n", latestIndex)
-				continue
+				fmt.Printf("Failed to subscribe\n")
+				return
 			}
-			fmt.Println(string(response.Text))
-			if response.Index > latestIndex {
-				latestIndex++
+			if latestIndex >= 0 {
+				var response message.Message
+				err = client.Call("BrokerRPCServer.ConsumeAt",
+					message.Message{
+						ID:           config.ProviderID,
+						Type:         message.CONSUME_MESSAGE,
+						Topic:        topic,
+						Role:         message.PROVIDER,
+						Timestamp:    time.Now(),
+						PartitionIdx: partitionNumber,
+						Index:        latestIndex,
+					},
+					&response)
+				if response.Index > latestIndex {
+					latestIndex++
+				}
+				if err != nil {
+					fmt.Printf("Failed to consume data from index %d\n", latestIndex)
+					continue
+				}
+				_, ok := seenMessages[string(response.Payload)]
+				if !ok {
+					seenMessages[string(response.Payload)] = true
+					fmt.Println(string(response.Payload))
+				}
 			}
-			time.Sleep(3000)
 		}
 	}()
+
+	// for {
+	// 	err = client.Call("BrokerRPCServer.GetLatestIndex",
+	// 		message.Message{
+	// 			ID:           config.ProviderID,
+	// 			Type:         message.GET_LATEST_INDEX,
+	// 			Topic:        topic,
+	// 			Role:         message.PROVIDER,
+	// 			Timestamp:    time.Now(),
+	// 			PartitionIdx: partitionNumber,
+	// 			Proposer:     config.ProviderID,
+	// 		},
+	// 		&latestIndex)
+	// 	if err != nil {
+	// 		fmt.Printf("Failed to subscribe\n")
+	// 		return
+	// 	}
+	// 	println("latest index: ", latestIndex)
+	// 	if latestIndex >= 0 {
+	// 		var response message.Message
+	// 		err = client.Call("BrokerRPCServer.ConsumeAt",
+	// 			message.Message{
+	// 				ID:           config.ProviderID,
+	// 				Type:         message.CONSUME_MESSAGE,
+	// 				Topic:        topic,
+	// 				Role:         message.PROVIDER,
+	// 				Timestamp:    time.Now(),
+	// 				PartitionIdx: partitionNumber,
+	// 				Index:        latestIndex,
+	// 			},
+	// 			&response)
+	// 		if err != nil {
+	// 			fmt.Printf("Failed to consume data from index %d\n", latestIndex)
+	// 			time.Sleep(3)
+	// 			continue
+	// 		}
+	// 		// if !strings.Contains(response.Text, "not found") {
+	// 		// 	fmt.Println(string(response.Text))
+	// 		// 	time.Sleep(3)
+	// 		// }
+	// 		if response.Index > latestIndex {
+	// 			latestIndex++
+	// 		}
+	// 	} else {
+	// 		continue
+	// 	}
+	// }
 }
 
 func consumeAt(topic string, partitionNumber uint8, index int) {
