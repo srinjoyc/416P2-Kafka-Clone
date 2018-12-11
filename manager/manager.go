@@ -1091,7 +1091,7 @@ func spawnRPCServer() error {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
 
-	manager.ManagerIP = tcpAddr.IP.String()
+	manager.ManagerIP = listener.Addr().String()
 
 	fmt.Printf("Serving RPC Server at: %v\n", manager.ManagerIP)
 	vrpc.ServeRPCConn(server, listener, logger, loggerOptions)
