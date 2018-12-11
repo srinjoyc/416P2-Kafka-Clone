@@ -1043,10 +1043,25 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 }
 
 //TODO:
-func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) error { return nil }
+func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) error {
+	println("Getting leader...")
+	if request.Type == m.GET_LEADER {
+		requestedTopic, ok := manager.TopicMap[request.Topic]
+		// not found topic name
+		if !ok {
+			*response = "No leader for that topic/partition."
+		}
+		partition := requestedTopic.Partitions[request.PartitionIdx]
+		leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
+		*response = leaderIP
+	} else {
+		*response = "No leader for that topic/partition."
+	}
+	return nil
+}
 
 //TODO:
-func (mrpc *ManagerRPCServer) PublishMessage(request *m.Message, ack *bool) error { return nil }
+func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, ack *bool) error { return nil }
 
 func getHashingNodes(key string, replicaCount int) []string {
 	var list []string

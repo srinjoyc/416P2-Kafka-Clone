@@ -1,0 +1,66 @@
+m1 {"m1":1}
+Initialization Complete
+m1 {"m1":2, "m2":2}
+Received RPC request
+m1 {"m1":3, "m2":2}
+Sending response to RPC request
+m1 {"m1":4, "m2":2, "b1":2}
+Received RPC request
+m1 {"m1":5, "m2":2, "b1":2}
+Making RPC call
+m1 {"m1":6, "m2":5, "b1":2}
+Received RPC Call response from server
+m1 {"m1":7, "m2":5, "b1":2}
+Making RPC call
+m1 {"m2":7, "b1":2, "m1":8}
+Received RPC Call response from server
+m1 {"m1":9, "m2":7, "b1":2}
+Making RPC call
+m1 {"m1":10, "m2":9, "b1":2}
+Received RPC Call response from server
+m1 {"m1":11, "m2":9, "b1":2}
+Sending response to RPC request
+m1 {"m1":12, "m2":9, "b1":2, "b2":2}
+Received RPC request
+m1 {"m1":13, "m2":9, "b1":2, "b2":2}
+Making RPC call
+m1 {"m1":14, "m2":11, "b1":2, "b2":2}
+Received RPC Call response from server
+m1 {"b1":2, "b2":2, "m1":15, "m2":11}
+Making RPC call
+m1 {"m1":16, "m2":13, "b1":2, "b2":2}
+Received RPC Call response from server
+m1 {"m1":17, "m2":13, "b1":2, "b2":2}
+Making RPC call
+m1 {"m1":18, "m2":15, "b1":2, "b2":2}
+Received RPC Call response from server
+m1 {"m1":19, "m2":15, "b1":2, "b2":2}
+Sending response to RPC request
+m1 {"b3":2, "m1":20, "m2":15, "b1":2, "b2":2}
+Received RPC request
+m1 {"m2":15, "b1":2, "b2":2, "b3":2, "m1":21}
+Making RPC call
+m1 {"m1":22, "m2":17, "b1":2, "b2":2, "b3":2}
+Received RPC Call response from server
+m1 {"m1":23, "m2":17, "b1":2, "b2":2, "b3":2}
+Making RPC call
+m1 {"m1":24, "m2":19, "b1":2, "b2":2, "b3":2}
+Received RPC Call response from server
+m1 {"m1":25, "m2":19, "b1":2, "b2":2, "b3":2}
+Making RPC call
+m1 {"m1":26, "m2":21, "b1":2, "b2":2, "b3":2}
+Received RPC Call response from server
+m1 {"m1":27, "m2":21, "b1":2, "b2":2, "b3":2}
+Sending response to RPC request
+m1 {"m2":21, "b1":2, "b2":2, "b3":2, "client":2, "m1":28}
+Received RPC request
+m1 {"b3":2, "client":2, "m1":29, "m2":21, "b1":2, "b2":2}
+Making RPC call
+m1 {"b2":11, "b3":2, "client":2, "m1":30, "m2":21, "b1":9}
+Received RPC Call response from server
+m1 {"m1":31, "m2":21, "b1":9, "b2":11, "b3":2, "client":2}
+Sending response to RPC request
+m1 {"b1":9, "b2":11, "b3":2, "client":2, "m1":32, "m2":21}
+Received RPC request
+m1 {"client":2, "m1":33, "m2":21, "b1":9, "b2":11, "b3":2}
+Sending response to RPC request
