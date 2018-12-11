@@ -710,7 +710,9 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 		LeaderIP:       broker.brokerAddr,
 		Followers:      make(map[BrokerNodeID]net.Addr),
 	}
-
+	for nodeId, ip := range message.IPs {
+		partition.Followers[BrokerNodeID(nodeId)], _ = net.ResolveTCPAddr("tcp4", ip)
+	}
 	broker.partitionMu.Lock()
 	broker.partitionMap[PartitionID(fmt.Sprintf("%v_%v", partition.TopicName, partition.PartitionIdx))] = partition
 	// broker.partitionMap[PartitionID(partition.HashString())] = partition
@@ -841,6 +843,9 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 		if !ok {
 			*ack = false
 			return nil
+		}
+		for _, name := range partition.Followers {
+			println(name)
 		}
 		if err := brpc.threePC("PublishMessage", msg, partition.Followers); err != nil {
 			return err

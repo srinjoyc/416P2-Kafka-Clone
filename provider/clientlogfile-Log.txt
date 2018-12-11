@@ -1,2 +1,6 @@
 client {"client":1}
 Initialization Complete
+client {"client":2}
+Making RPC call
+client {"client":3}
+Received RPC Call response from server
