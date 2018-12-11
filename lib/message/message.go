@@ -27,6 +27,7 @@ const (
 	CONSUME_MESSAGE
 	GET_LATEST_INDEX
 	TOPIC_LIST
+	COPY_BROKER_MAP
 )
 
 const (
@@ -52,6 +53,7 @@ type Message struct {
 	Timestamp    time.Time
 	ReplicaNum   int
 	Index        int
+	NewIPList    []string
 }
 
 func (m *Message) Hash() [sha1.Size]byte {

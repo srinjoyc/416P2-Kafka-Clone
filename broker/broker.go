@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
+	"encoding/gob"
 	"fmt"
+	"log"
 	"net"
 	"net/rpc"
 	"os"
@@ -69,10 +72,10 @@ type Partition struct {
 }
 
 type BrokerNode struct {
-	brokerNodeID     BrokerNodeID
-	brokerAddr       net.Addr
-	managerAddr      net.Addr
-	partitionMap     map[PartitionID]*Partition
+	BrokerNodeID     BrokerNodeID
+	BrokerAddr       net.Addr
+	ManagerAddr      net.Addr
+	PartitionMap     map[PartitionID]*Partition
 	partitionMu      *sync.Mutex
 	transactionCache *lru.Cache
 }
@@ -118,8 +121,8 @@ var broker *BrokerNode
 // Initialize starts the node as a Broker node in the network
 func InitBroker(addr string) error {
 	broker = &BrokerNode{
-		brokerNodeID: BrokerNodeID(config.BrokerNodeID),
-		partitionMap: make(map[PartitionID]*Partition),
+		BrokerNodeID: BrokerNodeID(config.BrokerNodeID),
+		PartitionMap: make(map[PartitionID]*Partition),
 		partitionMu:  &sync.Mutex{},
 	}
 
@@ -127,13 +130,13 @@ func InitBroker(addr string) error {
 	if err != nil {
 		return err
 	}
-	broker.brokerAddr = brokerAddr
+	broker.BrokerAddr = brokerAddr
 
 	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
 	if err != nil {
 		return err
 	}
-	broker.managerAddr = managerAddr
+	broker.ManagerAddr = managerAddr
 
 	cache, err := lru.New(cacheSize)
 
@@ -212,7 +215,7 @@ func (brpc *BrokerRPCServer) CreateNewPartition(message *m.Message, ack *bool) e
 		ReplicationNum:  uint8(message.ReplicaNum),
 		Partitions:      message.Partitions,
 		Role:            ROLE(message.Role),
-		LeaderIP:        broker.brokerAddr,
+		LeaderIP:        broker.BrokerAddr,
 		Followers:       make(map[BrokerNodeID]net.Addr),
 		ClientOffsetMap: make(map[ClientID]uint),
 	}
@@ -351,7 +354,7 @@ func (brpc *BrokerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, 
 	wg := sync.WaitGroup{}
 
 	for k, v := range peerAddrs {
-		if k == broker.brokerNodeID {
+		if k == broker.BrokerNodeID {
 			continue
 		}
 		wg.Add(1)
@@ -395,7 +398,7 @@ func (brpc *BrokerRPCServer) recoverPhase(serviceMethod string, msg *m.Message, 
 		fmt.Println("Commit Phase Done")
 	}
 
-	if _, exists := peerAddrs[broker.brokerNodeID]; exists {
+	if _, exists := peerAddrs[broker.BrokerNodeID]; exists {
 		// Local Commit
 		var ack bool
 
@@ -426,7 +429,7 @@ func (brpc *BrokerRPCServer) canCommit(serviceMethod string, msg *m.Message, pee
 	}
 
 	peerTransactionState := make(map[BrokerNodeID]State)
-	peerTransactionState[broker.brokerNodeID] = s
+	peerTransactionState[broker.BrokerNodeID] = s
 
 	var wg sync.WaitGroup
 	errorCh := make(chan error, 1)
@@ -717,7 +720,7 @@ func (brpc *BrokerRPCServer) CommitPublishMessageRPC(msg *m.Message, ack *bool) 
 		return err
 	}
 	indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
-	partition, ok := broker.partitionMap[indexID]
+	partition, ok := broker.PartitionMap[indexID]
 	// not found topic or partition
 	if !ok {
 		*ack = false
@@ -754,7 +757,7 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 		ReplicationNum:   uint8(message.ReplicaNum),
 		Partitions:       message.Partitions,
 		Role:             ROLE(message.Role),
-		LeaderIP:         broker.brokerAddr,
+		LeaderIP:         broker.BrokerAddr,
 		Followers:        make(map[BrokerNodeID]net.Addr),
 		Contents:         make([]string, 100),
 		contentMu:        &sync.Mutex{},
@@ -762,7 +765,7 @@ func (brpc *BrokerRPCServer) CommitCreateNewPartitionRPC(message *m.Message, ack
 	}
 
 	broker.partitionMu.Lock()
-	broker.partitionMap[PartitionID(fmt.Sprintf("%v_%v", partition.TopicName, partition.PartitionIdx))] = partition
+	broker.PartitionMap[PartitionID(fmt.Sprintf("%v_%v", partition.TopicName, partition.PartitionIdx))] = partition
 	// broker.partitionMap[PartitionID(partition.HashString())] = partition
 	broker.partitionMu.Unlock()
 
@@ -894,7 +897,7 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 	if msg.Type == m.PUSHMESSAGE {
 		indexID := (PartitionID)(msg.Topic + "_" + strconv.FormatUint(uint64(msg.PartitionIdx), 10))
 		println(indexID)
-		partition, ok := broker.partitionMap[indexID]
+		partition, ok := broker.PartitionMap[indexID]
 		// not found topic or partition
 		if !ok {
 			*ack = false
@@ -912,7 +915,7 @@ func (brpc *BrokerRPCServer) PublishMessage(msg *m.Message, ack *bool) error {
 func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) error {
 	if request.Type == m.CONSUME_MESSAGE {
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
-		partition, ok := broker.partitionMap[indexID]
+		partition, ok := broker.PartitionMap[indexID]
 		// not found topic or partition
 		if !ok || request.Index > partition.LastContentIndex {
 			response.Index = partition.LastContentIndex
@@ -931,7 +934,7 @@ func (mrpc *BrokerRPCServer) ConsumeAt(request *m.Message, response *m.Message) 
 func (mrpc *BrokerRPCServer) GetLatestIndex(request *m.Message, response *int) error {
 	if request.Type == m.GET_LATEST_INDEX {
 		indexID := (PartitionID)(request.Topic + "_" + strconv.FormatUint(uint64(request.PartitionIdx), 10))
-		partition, ok := broker.partitionMap[indexID]
+		partition, ok := broker.PartitionMap[indexID]
 		// not found topic or partition
 		if !ok {
 			*response = -1
@@ -940,5 +943,73 @@ func (mrpc *BrokerRPCServer) GetLatestIndex(request *m.Message, response *int) e
 		println(partition.LastContentIndex)
 		*response = partition.LastContentIndex
 	}
+	return nil
+}
+
+// commit stuff
+
+// needs message.Topic, PartitionIdx
+func (brpc *BrokerRPCServer) LeaderPromotion(message *m.Message, ack *bool) error {
+	println("promoting leader")
+	println(message.NewIPList[0])
+	// change my role
+	indexID := (PartitionID)(message.Topic + "_" + strconv.FormatUint(uint64(message.PartitionIdx), 10))
+	partition, ok := broker.PartitionMap[indexID]
+	// not found topic or partition
+	if !ok {
+		*ack = false
+		return nil
+	}
+	partition.LeaderIP, _ = net.ResolveTCPAddr("tcp", config.BrokerIP)
+	partition.Role = LEADER
+	// change my followers - msg.txt has the failed IP
+	failedNodeIP, _ := net.ResolveTCPAddr("tcp", message.Text)
+	newIP, _ := net.ResolveTCPAddr("tcp", message.NewIPList[0])
+	i := 0
+	contactNeeded := make([]net.Addr, len(broker.PartitionMap))
+	// replace all partitions with the new IP
+	for _, partition := range broker.PartitionMap {
+		for _, followerAddr := range partition.Followers {
+			contactNeeded[i] = followerAddr
+			i++
+			if followerAddr == failedNodeIP {
+				followerAddr = newIP
+			}
+		}
+	}
+	var network bytes.Buffer // Stand-in for a network connection
+	gob.Register(broker)
+	gob.Register(net.TCPAddr{})
+	enc := gob.NewEncoder(&network) // Will write to network.
+	// Encode (send) the value.
+	err := enc.Encode(broker)
+	if err != nil {
+		log.Fatal("encode error:", err)
+	}
+
+	if err := brpc.threePC("LeaderPromotion", message, partition.Followers); err != nil {
+		// TODO handle retry on connection error
+	}
+
+	// start contacting the nodes
+
+	println("promoting this leader")
+	println(contactNeeded)
+	return nil
+}
+
+func (brpc *BrokerRPCServer) CommitLeaderPromotionRPC(message *m.Message, ack *bool) error {
+	println("about to commit")
+	gob.Register(broker)
+	var network bytes.Buffer
+	dec := gob.NewDecoder(&network) // Will read from network.
+	var newBroker BrokerNode
+	err := dec.Decode(&newBroker)
+	if err != nil {
+		log.Fatal("decode error:", err)
+	}
+	*broker = newBroker
+	println(broker.BrokerAddr)
+	*ack = true
 	return nil
 }

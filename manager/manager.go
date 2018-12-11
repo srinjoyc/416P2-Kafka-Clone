@@ -255,13 +255,32 @@ func (mrpc *ManagerRPCServer) ReportNodeFailure(msg *m.Message, ack *bool) error
 	for topicName, topic := range manager.TopicMap {
 		println(topicName)
 		for _, partition := range topic.Partitions {
-			println(partition.LeaderNodeID)
-			leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
-			if leaderIP == failedNodeIP {
-				// promote a follower
-				promotedLeaderIP := partition.FollowerIPs[partition.LeaderNodeID][0]
-				println(promotedLeaderIP)
+			promotedLeaderIP := "127.0.0.1:3003"
+			println(promotedLeaderIP)
+			rpcClient, err := vrpc.RPCDial("tcp", promotedLeaderIP, logger, loggerOptions)
+			defer rpcClient.Close()
+			if err != nil {
+				println(err.Error)
+				return err
 			}
+			// promote a follower
+			println(partition.FollowerIPs[partition.LeaderNodeID])
+			println(promotedLeaderIP)
+			ack := false
+			// get node from free list
+			newIP := make([]string, 1)
+			newIP[0] = "127.0.0.1:3003"
+			newMsg := m.Message{
+				Topic:        topicName,
+				PartitionIdx: partition.PartitionIdx,
+				Text:         failedNodeIP,
+				NewIPList:    newIP,
+			}
+			println("calling Leader Promo")
+			if err := rpcClient.Call("BrokerRPCServer.LeaderPromotion", newMsg, &ack); err != nil {
+				return err
+			}
+			println(promotedLeaderIP)
 			println(partition.FollowerIPs)
 		}
 	}
@@ -1053,7 +1072,7 @@ func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) er
 	if request.Type == m.GET_LEADER {
 		requestedTopic, ok := manager.TopicMap[request.Topic]
 		// not found topic name
-		if !ok || int(request.PartitionIdx) >= len(requestedTopic.Partitions)-1 {
+		if !ok || int(request.PartitionIdx) > len(requestedTopic.Partitions)-1 {
 			*response = "No leader for that topic/partition."
 			return nil
 		}

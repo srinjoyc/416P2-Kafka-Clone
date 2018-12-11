@@ -134,7 +134,7 @@ func shell() {
 		cmd, _ := reader.ReadString('\n')
 		if cmd == "partition\n" {
 			fmt.Println("Here's partition")
-			fmt.Printf("%v\n", broker.partitionMap)
+			fmt.Printf("%v\n", broker.PartitionMap)
 		}
 		if cmd == "report\n" {
 			fmt.Println("127.0.0.1:3001 reported")
