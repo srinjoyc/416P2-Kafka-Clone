@@ -825,7 +825,7 @@ func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error
 		fmt.Println(err)
 		return err
 	}
-	
+
 	manager.TopicMutex.Lock()
 	manager.TopicMap[msg.Topic] = topic
 	manager.TopicMutex.Unlock()
@@ -993,8 +993,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 
 		select {
 		case err := <-errorCh:
-
-			//TODO Handle Broker Node connection failure
+			//TODOs:Handle Broker Node connection failure
 			fmt.Println(err)
 			switch err.(type) {
 			case *TimeoutErr:
@@ -1021,7 +1020,7 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 		
 		if err := mrpc.threePC("AddTopic", payloadMsg, manager.ManagerPeers); err!=nil{
 			fmt.Println(err)
-			// Handle Error
+			// TODOs: Handle Error
 			return err
 		}
 
