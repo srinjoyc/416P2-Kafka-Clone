@@ -1026,7 +1026,16 @@ func (mrpc *ManagerRPCServer) GetLeader(request *m.Message, response *string) er
 }
 
 //TODO:
-func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, ack *bool) error { return nil }
+func (mrpc *ManagerRPCServer) GetTopicList(request *m.Message, response *map[string]uint8) error {
+	if request.Type == m.TOPIC_LIST {
+		allTopics := make(map[string]uint8)
+		for topicName, topic := range manager.TopicMap {
+			allTopics[topicName] = topic.Partitions[len(topic.Partitions)-1].PartitionIdx
+		}
+		*response = allTopics
+	}
+	return nil
+}
 
 func getHashingNodes(key string, replicaCount int) []string {
 	var list []string
