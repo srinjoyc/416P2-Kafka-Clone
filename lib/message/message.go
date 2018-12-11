@@ -23,10 +23,10 @@ const (
 	MANAGER_PUSH
 	MANAGER_RESPONSE_TO_PROVIDER
 	CREATE_NEW_TOPIC
-	GET_TOPIC_LIST
 	PUSHMESSAGE
 	CONSUME_MESSAGE
 	GET_LATEST_INDEX
+	TOPIC_LIST
 )
 
 const (
@@ -51,7 +51,7 @@ type Message struct {
 	IPs          map[string]string
 	Timestamp    time.Time
 	ReplicaNum   int
-	Index        uint8
+	Index        int
 }
 
 func (m *Message) Hash() [sha1.Size]byte {

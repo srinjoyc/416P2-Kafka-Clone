@@ -278,9 +278,12 @@ func createNewTopic(topic string, partitionNumber uint8, replicaNum int) {
 		log.Fatal(err)
 	}
 
-	// TODO: replace with := range response.IPS
 	for i, leaderIP := range response.IPs {
-		ips[topicPartition{topic, uint8(i)}] = leaderIP
+		partition, err := strconv.Atoi(i)
+		if err != nil {
+			continue
+		}
+		ips[topicPartition{topic, uint8(partition)}] = leaderIP
 	}
 
 	fmt.Printf("Successfully created topic %s with %d partitions\n", topic, partitionNumber)
@@ -294,11 +297,11 @@ func getTopicList() {
 		log.Fatal(err)
 	}
 
-	var response message.Message
-	err = client.Call("ManagerRPCServer.GetTopicList",
+	var response map[string]uint8
+	err = client.Call("ManagerRPCServer.GetTopics",
 		message.Message{
 			ID:        config.ProviderID,
-			Type:      message.GET_TOPIC_LIST,
+			Type:      message.TOPIC_LIST,
 			Role:      message.PROVIDER,
 			Timestamp: time.Now(),
 			Proposer:  config.ProviderID,
@@ -308,8 +311,15 @@ func getTopicList() {
 		log.Fatal(err)
 	}
 
-	// TODO: make this the correct response
-	fmt.Printf("Got list of topics:\n%v\n", response.IPs)
+	fmt.Printf("Got list of topics:\n\n")
+	for topic, partitions := range response {
+		fmt.Printf("Topic: %s\n", topic)
+		fmt.Printf("\tPartitions: ")
+		for i := 0; i < int(partitions); i++ {
+			fmt.Printf("%d, ", i)
+		}
+		fmt.Printf("\n")
+	}
 }
 
 func publishMessage(topic string, partitionNumber uint8, text string) {
@@ -350,7 +360,7 @@ func subscribe(topic string, partitionNumber uint8) {
 		log.Fatal(err)
 	}
 
-	var latestIndex uint8
+	var latestIndex int
 	err = client.Call("BrokerRPCServer.GetLatestIndex",
 		message.Message{
 			ID:           config.ProviderID,
@@ -367,6 +377,7 @@ func subscribe(topic string, partitionNumber uint8) {
 		return
 	}
 
+	// TODO: getting []bytes back
 	go func() {
 		for {
 			var response string
