@@ -1,6 +1,0 @@
-client {"client":1}
-Initialization Complete
-client {"client":2}
-Making RPC call
-client {"b4":43, "m1":77, "m2":33, "m3":27, "b1":21, "b2":39, "client":3, "b3":21}
-Received RPC Call response from server
