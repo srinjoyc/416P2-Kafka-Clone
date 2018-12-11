@@ -668,6 +668,7 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 		wg.Add(1)
 		go func(manID ManagerNodeID, manAddr string) {
 			fmt.Println("manager iD: ", manID, "manager IP: ", manAddr)
+			
 			// Prevent Closure
 			defer func() {
 				if p := recover(); p != nil {
@@ -676,26 +677,39 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 			}()
 			defer wg.Done()
 
-			rpcClient, err := vrpc.RPCDial("tcp", manAddr, logger, loggerOptions)
+			fmt.Println(manID, "Break 1")
 
+			rpcClient, err := vrpc.RPCDial("tcp", manAddr, logger, loggerOptions)
 			defer rpcClient.Close()
+
+			fmt.Println(manID, "Break 2")
 
 			if err != nil {
 				errorCh <- NewConnectionErr(manID, manAddr, err)
 				return
 			}
 
+			fmt.Println(manID, "Break 3")
+
 			var s State
 			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommitRPC"), msg, &s); err != nil {
+				fmt.Println(manID, "Break 6")
 				switch err.(type) {
 				case *RPCTimedout:
+					fmt.Println(manID, "Break 7")
 					errorCh <- NewTimeoutErr(manID, manAddr, err)
 				default:
+					fmt.Println(manID, "Break 8")
 					errorCh <- NewConnectionErr(manID, manAddr, err)
 				}
 				return
 			}
+
+			fmt.Println(manID, "Break 4")
+
 			peerTransactionState[manID] = s
+
+			fmt.Println(manID, "Break 5")
 		}(managerID, managerPeer)
 	}
 
