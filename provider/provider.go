@@ -237,7 +237,7 @@ var cmds = map[string]func(...string) error{
 			return errInvalidArgs
 		}
 
-		consumeAt(topic, uint8(partitionNum), uint8(index))
+		consumeAt(topic, uint8(partitionNum), index)
 		return
 	},
 }
@@ -377,10 +377,10 @@ func subscribe(topic string, partitionNumber uint8) {
 		return
 	}
 
-	// TODO: getting []bytes back
+	// TODO: verify with srinjoy
 	go func() {
 		for {
-			var response string
+			var response message.Message
 			err = client.Call("BrokerRPCServer.ConsumeAt",
 				message.Message{
 					ID:           config.ProviderID,
@@ -396,14 +396,37 @@ func subscribe(topic string, partitionNumber uint8) {
 				fmt.Printf("Failed to consume data from index %d\n", latestIndex)
 				continue
 			}
-			fmt.Println(response)
+			fmt.Println(string(response.Payload))
 			latestIndex++
 		}
 	}()
 }
 
-func consumeAt(topic string, partitionNumber uint8, index uint8) {
-	return
+func consumeAt(topic string, partitionNumber uint8, index int) {
+	leaderIP := ips[topicPartition{topic, partitionNumber}]
+	logger = govec.InitGoVector("client", "clientlogfile", govec.GetDefaultConfig())
+	loggerOptions = govec.GetDefaultLogOptions()
+	client, err := vrpc.RPCDial("tcp", leaderIP, logger, loggerOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var response message.Message
+	err = client.Call("BrokerRPCServer.ConsumeAt",
+		message.Message{
+			ID:           config.ProviderID,
+			Type:         message.CONSUME_MESSAGE,
+			Topic:        topic,
+			Role:         message.PROVIDER,
+			Timestamp:    time.Now(),
+			PartitionIdx: partitionNumber,
+			Index:        index,
+		},
+		&response)
+	if err != nil {
+		fmt.Printf("Failed to consume data from index %d\n", index)
+		return
+	}
+	fmt.Println(string(response.Payload))
 }
 
 // helper
