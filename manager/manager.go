@@ -90,7 +90,7 @@ const (
 	ABORT
 )
 
-const cacheSize = 10
+const cacheSize = 100
 
 type BrokerNodeID string
 
@@ -672,12 +672,16 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 				}
 			}()
 			defer wg.Done()
+
 			rpcClient, err := vrpc.RPCDial("tcp", managerPeerAddr, logger, loggerOptions)
+
 			defer rpcClient.Close()
+
 			if err != nil {
 				errorCh <- NewConnectionErr(managerID, managerPeerAddr, err)
 				return
 			}
+
 			var s State
 			if err := RpcCallTimeOut(rpcClient, fmt.Sprintf("ManagerRPCServer.CanCommitRPC"), msg, &s); err != nil {
 				switch err.(type) {
@@ -697,6 +701,7 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 	fmt.Println("Break 3")
 
 	c := make(chan struct{})
+
 	go func() {
 		defer close(c)
 		wg.Wait()
@@ -704,6 +709,7 @@ func (mrpc *ManagerRPCServer) canCommit(serviceMethod string, msg *m.Message, pe
 
 	select {
 	case err := <-errorCh:
+		fmt.Println()
 		manager.TransactionCache.Add(msg.Hash(), ABORT)
 		manager.ManagerMutex.Unlock()
 		fmt.Println("Abort Transaction")
@@ -1224,7 +1230,7 @@ func RpcCallTimeOut(rpcClient *rpc.Client, serviceMethod string, args interface{
 		if doneCall.Error != nil {
 			return doneCall.Error
 		}
-	case <-time.After(time.Duration(100) * time.Second):
+	case <-time.After(time.Duration(5) * time.Second):
 		return NewRPCTimedout(rpcCall.ServiceMethod)
 	}
 	return nil
