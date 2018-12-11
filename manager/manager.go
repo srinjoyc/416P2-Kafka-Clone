@@ -1221,7 +1221,9 @@ func shell() {
 			server := getHashingNodes(v, n)
 			fmt.Printf("%v\n", server)
 		} else if cmd == "topicmap\n" {
-
+			for k, v := range manager.TopicMap{
+				fmt.Println(k, v)
+			}
 		} else if cmd == "peer\n" {
 			fmt.Println(manager.ManagerPeers)
 		}
