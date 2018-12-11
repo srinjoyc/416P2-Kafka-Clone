@@ -575,6 +575,7 @@ func (monitor *monitor) startMonitoring() (err error) {
 
 			// Increment our number of lost messages.
 			monitor.incLostMsgs()
+			println("lost msg...")
 			log.Printf("Number of lost messages: %d\n", monitor.getLostMsgs())
 
 			// If we've hit the lost messages threshold,

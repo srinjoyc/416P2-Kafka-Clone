@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	fdlib "../lib/fdlib"
 	m "../lib/message"
 	"github.com/DistributedClocks/GoVector/govec"
 	"github.com/DistributedClocks/GoVector/govec/vrpc"
@@ -93,7 +94,14 @@ func registerBrokerWithManager() error {
 	}
 	return nil
 }
-
+func startRespondingToMonitor() {
+	fd, _, err := fdlib.Initialize(12346, 10)
+	err = fd.StartResponding(config.BrokerIP)
+	println("responding to hbeats..")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error ", err.Error())
+	}
+}
 func main() {
 
 	if len(os.Args) != 2 {
@@ -102,14 +110,13 @@ func main() {
 	}
 
 	go shell()
-
 	err := Initialize()
 	checkError(err)
 
 	err = InitBroker(config.BrokerIP)
+	go startRespondingToMonitor()
 	checkError(err)
 
-	
 }
 
 func checkError(err error) {
@@ -128,6 +135,13 @@ func shell() {
 		if cmd == "partition\n" {
 			fmt.Println("Here's partition")
 			fmt.Printf("%v\n", broker.partitionMap)
+		}
+		if cmd == "report\n" {
+			fmt.Println("127.0.0.1:3001 reported")
+			err := reportNodeFailure("127.0.0.1:3001")
+			if err != nil {
+				println(err.Error)
+			}
 		}
 		// } else if cmd == "ring\n" {
 

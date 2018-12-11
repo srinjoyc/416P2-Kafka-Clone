@@ -152,6 +152,32 @@ func InitBroker(addr string) error {
 	return nil
 }
 
+func reportNodeFailure(failedNodeIP string) (err error) {
+	managerAddr, err := net.ResolveTCPAddr("tcp", config.ManagerIP)
+
+	if err != nil {
+		return err
+	}
+
+	rpcClient, err := vrpc.RPCDial("tcp", managerAddr.String(), logger, loggerOptions)
+	defer rpcClient.Close()
+	if err != nil {
+		return err
+	}
+	message := m.Message{
+		ID:        config.BrokerNodeID,
+		Text:      failedNodeIP,
+		Timestamp: time.Now(),
+	}
+	var ack bool
+	println("here1")
+	if err := rpcClient.Call("ManagerRPCServer.ReportNodeFailure", message, &ack); err != nil {
+		return err
+	}
+	println("here2")
+	return nil
+}
+
 // Spawn a rpc listen client
 func spawnListener(addr string) {
 	fmt.Println(addr)

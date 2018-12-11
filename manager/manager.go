@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	fdlib "../lib/fdlib"
 	m "../lib/message"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/serialx/hashring"
@@ -66,6 +67,8 @@ type AbortErr struct {
 type ManagerRPCServer int
 
 type ManagerNode struct {
+	fd               fdlib.FD
+	fdchan           <-chan fdlib.FailureDetected
 	ManagerNodeID    ManagerNodeID
 	ManagerPeers     map[ManagerNodeID]string
 	ManagerIP        string
@@ -161,9 +164,11 @@ func Initialize(configFileName string) error {
 		BrokerMutex:   &sync.Mutex{},
 		MU:            &sync.Mutex{},
 	}
-
+	// fd, notifyCh, err := fdlib.Initialize(12345, 8)
+	// manager.fd = fd
+	// manager.fdchan = notifyCh
+	//go monitorNodes()
 	cache, err := lru.New(cacheSize)
-
 	if err != nil {
 		return err
 	}
@@ -183,12 +188,26 @@ func Initialize(configFileName string) error {
 	ring = hashring.New(emptylist)
 
 	spawnRPCServer()
+
 	return nil
 }
 
+func monitorNodes() {
+	// start responding
+	err := manager.fd.StartResponding(config.ManagerIP)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error ", err.Error())
+	}
+	fmt.Println("Started responding to heartbeats.")
+	// Wait indefinitely, blocking on the notify channel, to detect a
+	// failure.
+	select {
+	case notify := <-manager.fdchan:
+		fmt.Println("Detected a failure of", notify)
+	}
+}
 func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	fmt.Println("registerPeerRequest")
-
 	defer func() {
 		if p := recover(); p != nil {
 			err = NewConnectionErr(ManagerNodeID("PrimaryManger"), managerPeerAddr, fmt.Errorf("%v", p))
@@ -227,6 +246,26 @@ func (mn *ManagerNode) registerPeerRequest(managerPeerAddr string) (err error) {
 	fmt.Println("PrintPeerMap")
 	fmt.Println(manager.ManagerPeers)
 
+	return nil
+}
+
+func (mrpc *ManagerRPCServer) ReportNodeFailure(msg *m.Message, ack *bool) error {
+	println("failure reported")
+	failedNodeIP := msg.Text
+	for topicName, topic := range manager.TopicMap {
+		println(topicName)
+		for _, partition := range topic.Partitions {
+			println(partition.LeaderNodeID)
+			leaderIP := manager.BrokerNodes[partition.LeaderNodeID]
+			if leaderIP == failedNodeIP {
+				// promote a follower
+				promotedLeaderIP := partition.FollowerIPs[partition.LeaderNodeID][0]
+				println(promotedLeaderIP)
+			}
+			println(partition.FollowerIPs)
+		}
+	}
+	*ack = true
 	return nil
 }
 
@@ -304,6 +343,7 @@ func (mrpc *ManagerRPCServer) AddBroker(msg *m.Message, ack *bool) error {
 	if err := mrpc.threePC("AddBroker", msg, manager.ManagerPeers); err != nil {
 		return err
 	}
+	//manager.fd.AddMonitor(config.ManagerIP, msg.Text, 3)
 	*ack = true
 	return nil
 }
