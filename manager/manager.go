@@ -516,6 +516,62 @@ func (mrpc *ManagerRPCServer) CreateNewTopic(request *m.Message, response *m.Mes
 	return nil
 }
 
+// func (mrpc *ManagerRPCServer) GetNewLeader(request *m.Message, ack *bool) error{
+// 	manager.TopicMutex.Lock()
+
+// 	topicPartitions := manager.TopicMap[request.Topic]
+// 	p := topicPartitions.Partitions[request.PartitionIdx]
+
+
+// 	if len(p.FollowerIPs) == 0{
+// 		return fmt.Errorf("No more folowers")
+// 	}
+
+// 	var newFollowerList = map[string]string{}
+// 	var newLeader string
+
+// 	for k, v := range p.FollowerIPs{
+// 		newFollowerList[string(k)] = v
+// 	}
+
+// 	for k := range newFollowerList{
+// 		newLeader = k
+// 		break
+// 	}
+
+// 	delete(newFollowerList, newLeader)
+
+// 	newMsg := m.Message{
+// 				ID:        string(newLeader),
+// 				Proposer:  string(manager.ManagerNodeID),
+// 				Text:      manager.BrokerNodes[newLeader]
+// 				Topic: request.Topic,
+// 				PartitionIdx: request.PartitionIdx,
+// 				IPs: newFollowerList,
+// 				Timestamp: time.Now(),
+// 	}
+
+
+// 	rpcClient, err := vrpc.RPCDial("tcp", manager.BrokerNodes[BrokerNodeID(newLeader)], logger, loggerOptions)
+// 	defer rpcClient.Close()
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	var res bool
+
+// 	if err := rpcClient.Call("BrokerRPCServer.SetNewLeader", newMsg, &res); err != nil {
+// 		return err
+// 	}
+
+	
+
+
+// 	// if err:= mrpc.threePC("GetNewLeader", )
+
+// 	return nil
+// }
+
 // --------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 func (mrpc *ManagerRPCServer) threePC(serviceMethod string, msg *m.Message, peerAddrs map[ManagerNodeID]string) error {
@@ -1061,12 +1117,6 @@ func (mrpc *ManagerRPCServer) CommitAddTopicRPC(msg *m.Message, ack *bool) error
 	return nil
 }
 
-//TODOs
-func (mrpc *ManagerRPCServer) CommitSubscribeClientRPC(msg *m.Message, ack *bool) error {
-
-	return nil
-}
-
 //----------------------------------------------------------------------------------------------------------------------
 
 func (mrpc *ManagerRPCServer) CommitRegistBrokerRPC(msg *m.Message, ack *bool) error {
@@ -1220,7 +1270,6 @@ func shell() {
 		} else if cmd == "topicmap\n" {
 			for k, v := range manager.TopicMap {
 				fmt.Println(k, v.TopicName)
-
 				for _, j := range v.Partitions {
 					fmt.Println("idx: ", j.PartitionIdx, "leader: ", j.LeaderNodeID)
 				}

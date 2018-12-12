@@ -252,6 +252,28 @@ func (brpc *BrokerRPCServer) DeleteBroker(msg *m.Message, ack *bool) error {
 	return nil
 }
 
+// func (brpc *BrokerRPCServer) SetNewLeader(msg *m.Message, ack *bool) error {
+// 	*ack = false
+// 	p := broker.partitionMap[PartitionID(fmt.Sprintf("%v_%v", msg.Topic, msg.PartitionIdx))]
+
+// 	if err := brpc.threePC("SetNewLeader", msg, p.Followers); err != nil {
+// 		return err
+// 	}
+
+// 	*ack = true
+// 	return nil
+// }
+
+// func (brpc *BrokerRPCServer) CommitSetNewLeaderRPC(msg *m.Message, ack *bool) error {
+// 	*ack = false
+// 	broker.partitionMu.Lock()
+// 	p := broker.partitionMap[PartitionID(fmt.Sprintf("%v_%v", msg.Topic, msg.PartitionIdx))]
+// 	p.LeaderIP = msg.Text
+
+// 	broker.partitionMu.Unlock()
+
+// }
+
 func (brpc *BrokerRPCServer) AddBrokerPeer(msg *m.Message, ack *bool) error {
 	if err := brpc.threePC("AddBrokerPeer", msg, broker.brokerPeers); err != nil {
 		//TODOs, handle Error
@@ -330,27 +352,26 @@ func (brpc *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerA
 	if err != nil {
 		fmt.Println("Can commit Err: ", err)
 		switch err.(type) {
-		case *TransactionErr:
+		case *ConnectionErr:
 
-			// TODO: Needs to retry transaction by asking manager for a new peer
+			ce := err.(*ConnectionErr)
 
-			// e := err.(*TransactionErr)
+			fmt.Printf("Broker Node: %v @ %v has failed", ce.NodeID, ce.Addr)
 
-			// switch (e.Err).(type) {
-			// case *ConnectionErr:
-			// 	fmt.Println("attempt to retry by delete peer")
-
-			// 	ce := (e.Err).(*ConnectionErr)
-			// 	deleteMsg := m.Message{
+			//
+			// deleteMsg := m.Message{
 			// 		ID:        string(ce.NodeID),
 			// 		Text:      ce.Addr.String(),
 			// 		Proposer:  string(manager.ManagerNodeID),
 			// 		Timestamp: time.Now(),
-			// 	}
-			// 	var ack bool
-			// 	if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+			// }
+			// var ack bool
+
+			// if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
 			// 		return fmt.Errorf("delete node failed: %v", err)
 			// 	}
+
+			// TODO: Needs to retry transaction by asking manager for a new peer
 
 			// 	if ack {
 			// 		if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
@@ -676,12 +697,10 @@ func (brpc *BrokerRPCServer) commit(serviceMethod string, msg *m.Message, peerAd
 		fmt.Println("Commit Phase Done")
 	}
 
-
 	// Local Commit
 	var ack bool
 
 	method := reflect.ValueOf(brpc).MethodByName(fmt.Sprintf("Commit%vRPC", serviceMethod))
-
 
 	if err := method.Call([]reflect.Value{reflect.ValueOf(msg), reflect.ValueOf(&ack)})[0].Interface(); err != nil {
 		brpc.abort(msg, peerAddrs)

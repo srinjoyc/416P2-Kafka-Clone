@@ -536,6 +536,8 @@ func consumeAt(topic string, partitionNumber uint8, index int) {
 		},
 		&response)
 	if err != nil {
+		// Handle Disconnection Error
+
 		fmt.Printf("Failed to consume data from index %d\n", index)
 		return
 	}
