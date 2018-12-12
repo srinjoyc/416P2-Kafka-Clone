@@ -355,9 +355,6 @@ func (brpc *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerA
 		switch err.(type) {
 		case *ConnectionErr:
 
-			ce := err.(*ConnectionErr)
-
-			fmt.Printf("Broker Node: %v @ %v has failed", ce.NodeID, ce.Addr)
 
 			//
 			// deleteMsg := m.Message{
@@ -397,6 +394,38 @@ func (brpc *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerA
 			}
 		}
 		if err := brpc.recoverPhase(serviceMethod, msg, recoverPeerAddr); err != nil {
+					fmt.Println("Can commit Err: ", err)
+		switch err.(type) {
+		case *ConnectionErr:
+
+
+			//
+			// deleteMsg := m.Message{
+			// 		ID:        string(ce.NodeID),
+			// 		Text:      ce.Addr.String(),
+			// 		Proposer:  string(manager.ManagerNodeID),
+			// 		Timestamp: time.Now(),
+			// }
+			// var ack bool
+
+			// if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+			// 		return fmt.Errorf("delete node failed: %v", err)
+			// 	}
+
+			// TODO: Needs to retry transaction by asking manager for a new peer
+
+			// 	if ack {
+			// 		if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+			// 			return fmt.Errorf("retry failed: %v", err)
+			// 		}
+			// 	}
+
+			// }
+		default:
+			fmt.Println("default Error")
+			return err
+		}
+		return nil
 			return err
 		}
 		return nil
@@ -404,11 +433,75 @@ func (brpc *BrokerRPCServer) threePC(serviceMethod string, msg *m.Message, peerA
 
 	// preCommitPhase
 	if err := brpc.preCommit(serviceMethod, msg, peerAddrs); err != nil {
+				fmt.Println("Can commit Err: ", err)
+		switch err.(type) {
+		case *ConnectionErr:
+
+
+			//
+			// deleteMsg := m.Message{
+			// 		ID:        string(ce.NodeID),
+			// 		Text:      ce.Addr.String(),
+			// 		Proposer:  string(manager.ManagerNodeID),
+			// 		Timestamp: time.Now(),
+			// }
+			// var ack bool
+
+			// if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+			// 		return fmt.Errorf("delete node failed: %v", err)
+			// 	}
+
+			// TODO: Needs to retry transaction by asking manager for a new peer
+
+			// 	if ack {
+			// 		if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+			// 			return fmt.Errorf("retry failed: %v", err)
+			// 		}
+			// 	}
+
+			// }
+		default:
+			fmt.Println("default Error")
+			return err
+		}
+		return nil
 		return err
 	}
 
 	// commitPhase
 	if err := brpc.commit(serviceMethod, msg, peerAddrs); err != nil {
+				fmt.Println("Can commit Err: ", err)
+		switch err.(type) {
+		case *ConnectionErr:
+
+
+			//
+			// deleteMsg := m.Message{
+			// 		ID:        string(ce.NodeID),
+			// 		Text:      ce.Addr.String(),
+			// 		Proposer:  string(manager.ManagerNodeID),
+			// 		Timestamp: time.Now(),
+			// }
+			// var ack bool
+
+			// if err := mrpc.DeletePeer(&deleteMsg, &ack); err != nil {
+			// 		return fmt.Errorf("delete node failed: %v", err)
+			// 	}
+
+			// TODO: Needs to retry transaction by asking manager for a new peer
+
+			// 	if ack {
+			// 		if err := mrpc.threePC(serviceMethod, msg, manager.ManagerPeers); err != nil {
+			// 			return fmt.Errorf("retry failed: %v", err)
+			// 		}
+			// 	}
+
+			// }
+		default:
+			fmt.Println("default Error")
+			return err
+		}
+		return nil
 		return err
 	}
 	return nil
