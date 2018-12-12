@@ -154,6 +154,7 @@ func spawnListener(addr string) {
 	server.Register(bRPC)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:8000")
+	// tcpAddr, err := net.ResolveTCPAddr("tcp", config.BrokerIP)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 	}
